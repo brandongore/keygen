@@ -40,7 +40,7 @@ pub fn accept_transition(de: f64, i: usize)
 		true
 	} else {
 		let p_de = cutoff_p(de, i);
-		let r = thread_rng().next_f64();
+		let r: f64 = thread_rng().gen();
 		r < p_de
 	}
 }

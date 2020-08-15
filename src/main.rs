@@ -1,16 +1,16 @@
-#![feature(linked_list_extras)]
+extern crate getopts;
 
 mod layout;
 mod penalty;
 mod annealing;
 mod simulator;
 
-extern crate getopts;
 
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use getopts::Options;
+use penalty::QuartadList;
 
 fn main()
 {
@@ -62,10 +62,11 @@ fn main()
 		}
 	};
 
+
 	// Read layout, if applicable.
 	let _layout;
 	let layout = match matches.free.get(1) {
-		None => &layout::INIT_LAYOUT,
+		None => &layout::DVORAK_LAYOUT,
 		Some(layout_filename) => {
 			let mut f = match File::open(layout_filename) {
 				Ok(f) => f,
@@ -90,93 +91,62 @@ fn main()
 	// Parse options.
 	let debug = matches.opt_present("d");
 	let top   = numopt(matches.opt_str("t"), 1usize);
-	let swaps = numopt(matches.opt_str("s"), 3usize);
+	let swaps = numopt(matches.opt_str("s"), 2usize);
 
 	match command.as_ref() {
 		"run" => run(&corpus[..], layout, debug, top, swaps),
-		"run-ref" => run_ref(&corpus[..]),
-		"refine" => refine(&corpus[..], layout, debug, top, swaps),
 		_ => print_usage(progname, opts),
+		//"run-ref" => ,//run_ref(&corpus[..]),
+		//"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
 	};
 }
 
 fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
 	let penalties = penalty::init();
-	let init_pos_map = layout::INIT_LAYOUT.get_position_map();
+	let init_pos_map = layout.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
-	let len = s.len();
-
-	loop {
-		simulator::simulate(&quartads, len, layout, &penalties, debug, top, swaps);
-	}
+	let len = (&quartads.map).into_iter().map(|(_,i)|i).sum();
+	
+	run_ref(s, &quartads);
+	simulator::simulate(&quartads, len, layout, &penalties, debug, top, swaps);
+	
 }
 
-fn run_ref(s: &str)
+fn run_ref(s: &str,quartads: &QuartadList )
 {
 	let penalties = penalty::init();
-	let init_pos_map = layout::INIT_LAYOUT.get_position_map();
-	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
-	let len = s.len();
+	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
+	let len:usize = (&quartads.map).into_iter().map(|(_,i)|i).sum();
 
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::QWERTY_LAYOUT, &penalties, true);
-	println!("Reference: QWERTY");
-	simulator::print_result(&layout::QWERTY_LAYOUT, &penalty);
-	println!("");
+	let ref_test = |s:&str, l:&layout::Layout|{
+		let (penalty, penalties) = penalty::calculate_penalty(&quartads, &l, &penalties, true);
+		println!("Reference: {}", s);
+		let e = simulator::BestLayoutsEntry{
+		    layout: l.clone(),
+		    penalty: penalty,
+		    penalties: penalties,
+		};
+		simulator::print_result(&e, len);
+		println!("");
+	};
 
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::DVORAK_LAYOUT, &penalties, true);
-	println!("Reference: DVORAK");
-	simulator::print_result(&layout::DVORAK_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::COLEMAK_LAYOUT, &penalties, true);
-	println!("Reference: COLEMAK");
-	simulator::print_result(&layout::COLEMAK_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::QGMLWY_LAYOUT, &penalties, true);
-	println!("Reference: QGMLWY");
-	simulator::print_result(&layout::QGMLWY_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::WORKMAN_LAYOUT, &penalties, true);
-	println!("Reference: WORKMAN");
-	simulator::print_result(&layout::WORKMAN_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::MALTRON_LAYOUT, &penalties, true);
-	println!("Reference: MALTRON");
-	simulator::print_result(&layout::MALTRON_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::MTGAP_LAYOUT, &penalties, true);
-	println!("Reference: MTGAP");
-	simulator::print_result(&layout::MTGAP_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::CAPEWELL_LAYOUT, &penalties, true);
-	println!("Reference: CAPEWELL");
-	simulator::print_result(&layout::CAPEWELL_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::ARENSITO_LAYOUT, &penalties, true);
-	println!("Reference: ARENSITO");
-	simulator::print_result(&layout::ARENSITO_LAYOUT, &penalty);
-	println!("");
-
-	let penalty = penalty::calculate_penalty(&quartads, len, &layout::INIT_LAYOUT, &penalties, true);
-	println!("Reference: INITIAL");
-	simulator::print_result(&layout::INIT_LAYOUT, &penalty);
+	ref_test("QWERTY", &layout::QWERTY_LAYOUT);
+	ref_test("DVORAK", &layout::DVORAK_LAYOUT);
+	ref_test("MTGAP", &layout::MTGAP_LAYOUT);
+	ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
+	
+	
 }
 
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
 	let penalties = penalty::init();
-	let init_pos_map = layout::INIT_LAYOUT.get_position_map();
+	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
 	let len = s.len();
 
-	simulator::refine(&quartads, len, layout, &penalties, debug, top, swaps);
+	//simulator::refine(&quartads, len, layout, &penalties, debug, top, swaps);
 }
 
 fn print_usage(progname: &String, opts: Options)
