@@ -98,13 +98,13 @@ pub static X1: Layout = Layout(
 								'\0',  '\n']));
 
 pub static TEST: Layout = Layout(
-	Layer([	'q', 'y', 'o', 'u', 'k',   'w', 'j', 'd', 'l', 'p', '-',
-			'h', 'i', 'e', 'a', '\'',   'f', 's', 't', 'n', 'r', 'g',
-			'z', 'x', 'c', 'v', 'b',   ';', 'm', ',', '.', '/',
+	Layer([	'b', 'y', 'o', 'u', 'k',   'w', 'j', 'd', 'l', 'p', '-',
+			'h', 'i', 'e', 'a', '\'',   'f', 's', 't', 'n', 'r', ';',
+			'z', 'x', 'c', 'v', 'q',   'g', 'm', ',', '.', '/',
 								'(',  ' ']),
-	Layer([	'Q', 'Y', 'O', 'U', 'K',   'W', 'J', 'D', 'L', 'P', '_',
-			'H', 'i', 'E', 'A', '"',   'F', 'S', 'T', 'N', 'R', 'G',
-			'Z', 'X', 'C', 'V', 'B',   ';', 'M', '<', '>', '?',
+	Layer([	'B', 'Y', 'O', 'U', 'K',   'W', 'J', 'D', 'L', 'P', '_',
+			'H', 'i', 'E', 'A', '"',   'F', 'S', 'T', 'N', 'R', ':',
+			'Z', 'X', 'C', 'V', 'Q',   'G', 'M', '<', '>', '?',
 								')',  '\n']));
 
 pub static QWERTY_LAYOUT: Layout = Layout(
@@ -205,21 +205,21 @@ pub static MTGAP_LAYOUT: Layout = Layout(
 						'Z', 'W', '>', 'H', 'J',   'V', 'C', 'Y', 'M', 'X',
 						'\0', ' ']));
 
-/*
+/**/
 pub static SWAPPABLE_MAP: KeyMap<bool>= [
-	true,  false,  false,  false,  true,       true,  true,  true,  false,  true,  true,
-	false,  false,  false,  false,  false,       true,  false,  false,  false,  false,  true,
+	false,  false,  false,  false,  true,       true,  true,  true,  false,  true,  false,
+	false,  false,  false,  false,  false,       true,  true,  true,  true,  true,  false,
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,
 								false, 		true
 ];
-*/
+/*
 pub static SWAPPABLE_MAP: KeyMap<bool>= [
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,  true,
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,  true,
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,
 								false, 		false
 ];
- /**/
+ */
 
 static KEY_FINGERS: KeyMap<Finger> = [
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index, Finger::Index,    Finger::Index, Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky, Finger::Pinky,

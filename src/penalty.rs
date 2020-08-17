@@ -131,8 +131,8 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
     },
     //7
     KeyPenaltyDescription {
-        name: "Unused",
-        show: false,
+        name: "Long roll out",
+        show: true,
     },
     KeyPenaltyDescription {
         name: "Alternation",
@@ -260,7 +260,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             // 1: Same finger.
             if curr.finger == old1.finger && curr.pos != old1.pos {
                 let penalty =
-                    10.0 ;//+ if curr.center { 5.0 } else { 0.0 } ;
+                    15.0 ;//+ if curr.center { 5.0 } else { 0.0 } ;
                 log(1, penalty );
             }
 
@@ -268,7 +268,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             if curr.row == Row::Top && old1.row == Row::Bottom
                 || curr.row == Row::Bottom && old1.row == Row::Top
             {
-                log(2, 2.0);
+                log(2, 5.0);
             }
 
             // 3: Long jump.
@@ -276,7 +276,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
                 if curr.row == Row::Top && old1.row == Row::Bottom
                     || curr.row == Row::Bottom && old1.row == Row::Top
                 {
-                    log(3, 10.0);
+                    log(3, 20.0);
                 }
 
                 // 4: Long jump consecutive.
@@ -311,12 +311,21 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             }
             // 9: Roll out.
             if is_roll_out(curr.finger, old1.finger) {
-                log(9, 2.5);
+                log(9, 1.0);
+                if curr.row == Row::Top && old1.row == Row::Bottom
+                    || curr.row == Row::Bottom && old1.row == Row::Top{
+                    log(7, 10.5);
+                }
             }
 
             // 10: Roll in.
             if is_roll_in(curr.finger, old1.finger) {
-                log(10, -1.0);
+                if old1.row!= Row::Bottom{
+                    log(10, -0.5);
+                }
+                else{
+
+                }
 
                 if is_roll_in2(curr.finger, old1.finger) {
                     //result[10].times+=count;
@@ -352,7 +361,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             log(14, 0.01);
         }
         //8: Alternation
-        if curr.hand != old1.hand && curr.hand != Hand::Thumb && old1.hand != Hand::Thumb {
+        if curr.hand != old1.hand {
             log(8, -0.2);
         }
 
