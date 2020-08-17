@@ -12,6 +12,22 @@ use std::io::Read;
 use getopts::Options;
 use penalty::QuartadList;
 
+
+
+//  made thumbs their own hand, 
+//  as they dont really matter from strain perspective when analysing alternation/rolls/etc
+
+
+
+/* TODO:
+		add penalities for uneven finger load
+		add penalities for uneven hand load
+		unicode support
+		cache layout-position-map and apply swaps directly to it, so it doesnt have to realocate every cycle
+
+*/
+
+//cargo run -- run corpus/books.short.txt
 fn main()
 {
 	let mut opts = Options::new();
@@ -66,7 +82,7 @@ fn main()
 	// Read layout, if applicable.
 	let _layout;
 	let layout = match matches.free.get(1) {
-		None => &layout::DVORAK_LAYOUT,
+		None => &layout::QWERTY_LAYOUT,
 		Some(layout_filename) => {
 			let mut f = match File::open(layout_filename) {
 				Ok(f) => f,
@@ -96,52 +112,53 @@ fn main()
 	match command.as_ref() {
 		"run" => run(&corpus[..], layout, debug, top, swaps),
 		_ => print_usage(progname, opts),
-		//"run-ref" => ,//run_ref(&corpus[..]),
+		//"run-ref" => run_ref(&corpus[..], &None),
 		//"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
 	};
 }
 
 fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
-	let penalties = penalty::init();
 	let init_pos_map = layout.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
-	let len = (&quartads.map).into_iter().map(|(_,i)|i).sum();
+	let len:usize = (&quartads.map).into_iter().map(|(_,i)|*i).sum::<i64>() as usize;
 	
 	run_ref(s, &quartads);
-	simulator::simulate(&quartads, len, layout, &penalties, debug, top, swaps);
+	simulator::simulate(&quartads, len, layout, debug, top, swaps);
 	
 }
 
 fn run_ref(s: &str,quartads: &QuartadList )
 {
-	let penalties = penalty::init();
-	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
-	let len:usize = (&quartads.map).into_iter().map(|(_,i)|i).sum();
+	let len = (&quartads.map).into_iter().map(|(_,i)|i).sum::<i64>() as usize;
 
 	let ref_test = |s:&str, l:&layout::Layout|{
-		let (penalty, penalties) = penalty::calculate_penalty(&quartads, &l, &penalties, true);
 		println!("Reference: {}", s);
-		let e = simulator::BestLayoutsEntry{
-		    layout: l.clone(),
-		    penalty: penalty,
-		    penalties: penalties,
-		};
-		simulator::print_result(&e, len);
+		let init_pos_map = l.get_position_map();
+		
+		let penalty= penalty::calculate_penalty(&quartads, &l);
+	
+		simulator::print_result(&penalty, len);
 		println!("");
 	};
-
 	ref_test("QWERTY", &layout::QWERTY_LAYOUT);
 	ref_test("DVORAK", &layout::DVORAK_LAYOUT);
 	ref_test("MTGAP", &layout::MTGAP_LAYOUT);
 	ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
+	ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
+	ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
+	ref_test("MALTRON", &layout::MALTRON_LAYOUT);
+	ref_test("RSTHD", &layout::RSTHD);
+	ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
+	//ref_test("DA_BEST", &layout::DABEST);
+	//ref_test("X1", &layout::X1);
+
 	
 	
 }
 
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
-	let penalties = penalty::init();
 	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
 	let len = s.len();
