@@ -362,7 +362,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
         }
         //8: Alternation
         if curr.hand != old1.hand {
-            log(8, -0.2);
+            log(8, -0.1);
         }
 
         if curr.hand == old1.hand && old1.hand == old2.hand {

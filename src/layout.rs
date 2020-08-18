@@ -97,15 +97,7 @@ pub static X1: Layout = Layout(
 			'Q', 'X', 'Z', '>', ':',   'W', 'G', 'M', 'B', 'J',
 								'\0',  '\n']));
 
-pub static TEST: Layout = Layout(
-	Layer([	'b', 'y', 'o', 'u', 'k',   'w', 'j', 'd', 'l', 'p', '-',
-			'h', 'i', 'e', 'a', '\'',   'f', 's', 't', 'n', 'r', ';',
-			'z', 'x', 'c', 'v', 'q',   'g', 'm', ',', '.', '/',
-								'(',  ' ']),
-	Layer([	'B', 'Y', 'O', 'U', 'K',   'W', 'J', 'D', 'L', 'P', '_',
-			'H', 'i', 'E', 'A', '"',   'F', 'S', 'T', 'N', 'R', ':',
-			'Z', 'X', 'C', 'V', 'Q',   'G', 'M', '<', '>', '?',
-								')',  '\n']));
+
 
 pub static QWERTY_LAYOUT: Layout = Layout(
 	Layer([	'q', 'w', 'e', 'r', 't',   'y', 'u', 'i', 'o', 'p', '-',
@@ -204,22 +196,31 @@ pub static MTGAP_LAYOUT: Layout = Layout(
 						'A', 'R', 'E', 'N', 'B',   'G', 'S', 'I', 'T', 'O', '\0',
 						'Z', 'W', '>', 'H', 'J',   'V', 'C', 'Y', 'M', 'X',
 						'\0', ' ']));
+pub static TEST: Layout = Layout(
+	Layer([	'b', 'y', 'o', 'u', 'j',   'f', 'g', 'd', 'l', 'v', '-',
+			'h', 'i', 'e', 'a', '\'',   'p', 't', 's', 'n', 'r', ';',
+			'z', 'x', 'q', ',', '.',   'k', 'c', 'w', 'm', '/',
+								'(',  ' ']),
+	Layer([	'B', 'Y', 'O', 'U', 'J',   'F', 'G', 'D', 'L', 'V', '_',
+			'H', 'i', 'E', 'A', '"',   'P', 'T', 'S', 'N', 'R', ':',
+			'Z', 'X', 'Q', '<', '>',   'K', 'C', 'W', 'M', '?',
+														')',  '\n']));
 
-/**/
+/*
 pub static SWAPPABLE_MAP: KeyMap<bool>= [
-	false,  false,  false,  false,  true,       true,  true,  true,  false,  true,  false,
-	false,  false,  false,  false,  false,       true,  true,  true,  true,  true,  false,
-	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,
+	false,  false,  false,  false,  true,       false,  false,  false,  false,  false,  false,
+	false,  false,  false,  false,  false,       false,  false,  false,  false,  false,  false,
+	true,  true,  true,  false,  false,       false,  true,  true,  false,  true,
 								false, 		true
 ];
-/*
+*/
 pub static SWAPPABLE_MAP: KeyMap<bool>= [
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,  true,
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,  true,
 	true,  true,  true,  true,  true,       true,  true,  true,  true,  true,
 								false, 		false
 ];
- */
+ 
 
 static KEY_FINGERS: KeyMap<Finger> = [
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index, Finger::Index,    Finger::Index, Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky, Finger::Pinky,
