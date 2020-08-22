@@ -78,13 +78,13 @@ pub struct KeyPress
 const NUM_OF_KEYS: usize = 34;
 
 pub static DABEST: Layout = Layout(
-	Layer([	'b', 'y', 'o', 'u', '/',   'w', 'g', 'c', 'l', 'p', '-',
+	Layer([	'b', 'y', 'o', 'u', '/',   'f', 'g', 'd', 'l', 'V', '-',
 			'h', 'i', 'e', 'a', ',',   'd', 't', 's', 'n', 'r', '\'',
-			'q', 'x', 'z', '.', ';',   'k', 'm', 'f', 'v', 'j',
+			'q', 'x', 'z', '.', ';',   'k', 'w', 'c', 'm', 'j',
 	              				'\0',  ' ']),
-	Layer([	'B', 'Y', 'O', 'U', '?',   'W', 'G', 'C', 'L', 'P', '_',
+	Layer([	'B', 'Y', 'O', 'U', '?',   'F', 'G', 'D', 'L', 'V', '_',
 			'H', 'I', 'E', 'A', '<',   'D', 'T', 'S', 'N', 'R', '"',
-			'Q', 'X', 'Z', '>', ':',   'K', 'M', 'F', 'V', 'J',
+			'Q', 'X', 'Z', '>', ':',   'K', 'W', 'C', 'M', 'J',
 	              				'\0',  '\n']));
 
 pub static X1: Layout = Layout(
@@ -196,6 +196,15 @@ pub static MTGAP_LAYOUT: Layout = Layout(
 						'A', 'R', 'E', 'N', 'B',   'G', 'S', 'I', 'T', 'O', '\0',
 						'Z', 'W', '>', 'H', 'J',   'V', 'C', 'Y', 'M', 'X',
 						'\0', ' ']));
+						pub static The_One: Layout = Layout(
+							Layer([	'k', 'm', 'l', 'u', '!',   'v', 'd', 'r', '\'', 'q', '\\',
+									'a', 't', 'h', 'e', '.',   'c', 's', 'n', 'o', 'i', '_',
+									'z', 'p', 'f', 'j', ',',   'b', 'g', 'w', 'x', 'y',
+														'\0',  ' ']),
+							Layer([	'K', 'M', 'L', 'U', '?',   'V', 'D', 'R', '"', 'Q', '|',
+							        'A', 'T', 'H', 'E', '>',   'C', 'S', 'N', 'O', 'I', '-',
+							        'Z', 'P', 'F', 'J', '<',   'B', 'G', 'W', 'X', 'Y',
+														'\0',  '\n']));
 pub static TEST: Layout = Layout(
 	Layer([	'b', 'y', 'o', 'u', 'j',   'f', 'g', 'd', 'l', 'v', '-',
 			'h', 'i', 'e', 'a', '\'',   'p', 't', 's', 'n', 'r', ';',

@@ -132,7 +132,7 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
     //7
     KeyPenaltyDescription {
         name: "Long roll out",
-        show: true,
+        show: false,
     },
     KeyPenaltyDescription {
         name: "Alternation",
@@ -278,37 +278,38 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
                 {
                     log(3, 20.0);
                 }
-
-                // 4: Long jump consecutive.
-                if curr.row == Row::Top && old1.row == Row::Bottom
-                    || curr.row == Row::Bottom && old1.row == Row::Top
+            }
+            
+            // 4: Long jump consecutive.
+            if curr.row == Row::Top && old1.row == Row::Bottom
+                || curr.row == Row::Bottom && old1.row == Row::Top
+            {
+                if curr.finger == Finger::Ring && old1.finger == Finger::Pinky
+                    || curr.finger == Finger::Pinky && old1.finger == Finger::Ring
+                    || curr.finger == Finger::Middle && old1.finger == Finger::Ring
+                    || curr.finger == Finger::Ring && old1.finger == Finger::Middle
+                    || (curr.finger == Finger::Index
+                        && (old1.finger == Finger::Middle || old1.finger == Finger::Ring)
+                        && curr.row == Row::Top
+                        && old1.row == Row::Bottom)
                 {
-                    if curr.finger == Finger::Ring && old1.finger == Finger::Pinky
-                        || curr.finger == Finger::Pinky && old1.finger == Finger::Ring
-                        || curr.finger == Finger::Middle && old1.finger == Finger::Ring
-                        || curr.finger == Finger::Ring && old1.finger == Finger::Middle
-                        || (curr.finger == Finger::Index
-                            && (old1.finger == Finger::Middle || old1.finger == Finger::Ring)
-                            && curr.row == Row::Top
-                            && old1.row == Row::Bottom)
-                    {
-                        log(4, 5.0);
-                    }
-                }
-
-                // 5: Pinky/ring twist.
-                if (curr.finger == Finger::Ring
-                    && old1.finger == Finger::Pinky
-                    && (curr.row == Row::Home && old1.row == Row::Top
-                        || curr.row == Row::Bottom && old1.row == Row::Top))
-                    || (curr.finger == Finger::Pinky
-                        && old1.finger == Finger::Ring
-                        && (curr.row == Row::Top && old1.row == Row::Home
-                            || curr.row == Row::Top && old1.row == Row::Bottom))
-                {
-                    log(5, 10.0);
+                    log(4, 5.0);
                 }
             }
+
+            // 5: Pinky/ring twist.
+            if (curr.finger == Finger::Ring
+                && old1.finger == Finger::Pinky
+                && (curr.row == Row::Home && old1.row == Row::Top
+                    || curr.row == Row::Bottom && old1.row == Row::Top))
+                || (curr.finger == Finger::Pinky
+                    && old1.finger == Finger::Ring
+                    && (curr.row == Row::Top && old1.row == Row::Home
+                        || curr.row == Row::Top && old1.row == Row::Bottom))
+            {
+                log(5, 10.0);
+            }
+            
             // 9: Roll out.
             if is_roll_out(curr.finger, old1.finger) {
                 log(9, 1.0);
@@ -320,7 +321,10 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
 
             // 10: Roll in.
             if is_roll_in(curr.finger, old1.finger) {
-                if old1.row!= Row::Bottom{
+                if old1.row!= Row::Bottom&&!(
+                    curr.row == Row::Top && old1.row == Row::Bottom
+                    || curr.row == Row::Bottom && old1.row == Row::Top
+                ){
                     log(10, -0.5);
                 }
                 else{
