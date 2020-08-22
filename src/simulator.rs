@@ -27,7 +27,6 @@ struct LL<T> {
 
 pub fn simulate<'a>(
     quartads: &penalty::QuartadList<'a>,
-    len: usize,
     init_layout: &layout::Layout,
     debug: bool,
     top_layouts: usize,
@@ -71,16 +70,16 @@ pub fn simulate<'a>(
                     // Probabilistically accept worse transitions; always accept better
                     // transitions.
                     if annealing::accept_transition(
-                        (curr_layout.penalty.total - accepted_layout.penalty.total) / (len as f64),
+                        (curr_layout.penalty.total - accepted_layout.penalty.total) / (accepted_layout.penalty.total as f64),
                         cycle as usize,
                     ) {
                         accepted_layout = curr_layout.clone();
                     }
                     if cycle % printFrequency  == 0 {
-                        print_result(&bestLayout, len);
+                        print_result(&bestLayout);
                     }
                 }
-                print_result(&entry, len);
+                print_result(&entry);
                 bestLayout
             })
             .collect();
@@ -93,7 +92,7 @@ pub fn simulate<'a>(
     }
     println!("................................................");
     for entry in best_layouts {
-        print_result(&entry, len);
+        print_result(&entry);
     }
 }
 
@@ -172,9 +171,10 @@ pub fn simulate<'a>(
     println!("{}", curr_layout);
 }
 */
-pub fn print_result<'a>(item: &BestLayoutsEntry, len: usize) {
+pub fn print_result<'a>(item: &BestLayoutsEntry) {
     let layout = &item.layout;
     let total = item.penalty.total;
+    let len = item.penalty.len;
     let penalties = &item.penalty.penalties;
     let penalty = &item.penalty;
     let fingers = &penalty.fingers;

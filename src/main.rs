@@ -17,17 +17,23 @@ use penalty::QuartadList;
 //  made thumbs their own hand, 
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
 
-
-
 /* TODO:
 		add penalities for uneven finger load
 		add penalities for uneven hand load
 		unicode support
 		cache layout-position-map and apply swaps directly to it, so it doesnt have to realocate every cycle
-
 */
 
-//cargo run -- run corpus/books.short.txt
+/* running options
+
+	cargo run -- run corpus/books.short.txt
+		tests reference layouts and then runs optimaliser
+	
+	cargo run -- run-ref corpus/books.short.txt
+		test reference layouts
+
+
+*/
 fn main()
 {
 	let mut opts = Options::new();
@@ -111,8 +117,8 @@ fn main()
 
 	match command.as_ref() {
 		"run" => run(&corpus[..], layout, debug, top, swaps),
+		"run-ref" => run_ref(&corpus[..], None),
 		_ => print_usage(progname, opts),
-		//"run-ref" => run_ref(&corpus[..], &None),
 		//"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
 	};
 }
@@ -120,41 +126,42 @@ fn main()
 fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
 	let init_pos_map = layout.get_position_map();
-	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
-	let len:usize = (&quartads.map).into_iter().map(|(_,i)|*i).sum::<i64>() as usize;
+	let quartads = penalty::prepare_quartad_list(s);
 	
-	run_ref(s, &quartads);
-	simulator::simulate(&quartads, len, layout, debug, top, swaps);
+	run_ref(s, Some(&quartads));
+	simulator::simulate(&quartads, layout, debug, top, swaps);
 	
 }
 
-fn run_ref(s: &str,quartads: &QuartadList )
+fn run_ref(s: &str,quartads:Option<&QuartadList> )
 {
-	let len = (&quartads.map).into_iter().map(|(_,i)|i).sum::<i64>() as usize;
-
-	let ref_test = |s:&str, l:&layout::Layout|{
-		println!("Reference: {}", s);
-		let init_pos_map = l.get_position_map();
+	let run_ref_ = |quartads|{  // making typechecker happy
 		
-		let penalty= penalty::calculate_penalty(&quartads, &l);
-	
-		simulator::print_result(&penalty, len);
-		println!("");
+		let ref_test = |s:&str, l:&layout::Layout|{
+			println!("Reference: {}", s);
+			let init_pos_map = l.get_position_map();
+			let penalty= penalty::calculate_penalty(quartads, &l);
+			simulator::print_result(&penalty);
+			println!("");
+		};
+		ref_test("QWERTY", &layout::QWERTY_LAYOUT);
+		ref_test("DVORAK", &layout::DVORAK_LAYOUT);
+		ref_test("MTGAP", &layout::MTGAP_LAYOUT);
+		ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
+		ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
+		ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
+		ref_test("MALTRON", &layout::MALTRON_LAYOUT);
+		ref_test("RSTHD", &layout::RSTHD);
+		ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
+		//ref_test("DABEST", &layout::DABEST);
+		//ref_test("THE_ONE", &layout::The_One);
+		//ref_test("X1", &layout::X1);
 	};
-	ref_test("QWERTY", &layout::QWERTY_LAYOUT);
-	ref_test("DVORAK", &layout::DVORAK_LAYOUT);
-	ref_test("MTGAP", &layout::MTGAP_LAYOUT);
-	ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
-	ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
-	ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
-	ref_test("MALTRON", &layout::MALTRON_LAYOUT);
-	ref_test("RSTHD", &layout::RSTHD);
-	ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
-	ref_test("DABEST", &layout::DABEST);
-	//ref_test("THE_ONE", &layout::The_One);
-	//ref_test("DA_BEST", &layout::DABEST);
-	//ref_test("X1", &layout::X1);
-
+	
+	match  quartads {
+		Some(quartads) => run_ref_(quartads),
+		None => run_ref_(&penalty::prepare_quartad_list(s)),
+	}
 	
 	
 }
@@ -162,7 +169,7 @@ fn run_ref(s: &str,quartads: &QuartadList )
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
 	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
-	let quartads = penalty::prepare_quartad_list(s, &init_pos_map);
+	let quartads = penalty::prepare_quartad_list(s);
 	let len = s.len();
 
 	//simulator::refine(&quartads, len, layout, &penalties, debug, top, swaps);

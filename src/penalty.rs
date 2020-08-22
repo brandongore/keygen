@@ -27,6 +27,7 @@ pub struct Penalty {
     pub fingers: [i64; 8],
     pub hands: [i64; 2],
     pub total: f64,
+    pub len: i64,
 }
 impl Penalty {
     pub fn new() -> Penalty {
@@ -44,6 +45,7 @@ impl Penalty {
             fingers: [0; 8],
             hands: [0; 2],
             total: 0.0,
+            len : 0,
         }
     }
 }
@@ -173,8 +175,7 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
 ];
 
 pub fn prepare_quartad_list<'a>(
-    string: &'a str,
-    position_map: &'a LayoutPosMap,
+    string: &'a str
 ) -> QuartadList<'a> {
     let mut quartads: HashMap<&str, i64> = HashMap::new();
 
@@ -182,7 +183,7 @@ pub fn prepare_quartad_list<'a>(
         let slice = &string[i..i + 4];
         if slice
             .chars()
-            .all(|c| position_map.get_key_position(c).is_some())
+            .all(|c| (c as i32) <= 128)
         {
             let entry = quartads.entry(slice).or_insert(0);
             *entry += 1;
@@ -220,6 +221,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             },
             None => panic!("unreachable"),
         };
+        result.len += count;
 
         let useFinger = |result: &mut Penalty, i: usize| match curr.finger {
             Finger::Pinky => result.fingers[i] += count,
