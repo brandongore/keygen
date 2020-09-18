@@ -12,3 +12,7 @@ num_cpus = "1.13.0"
 [profile.dev]
 opt-level = 3
 debug = true
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
