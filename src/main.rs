@@ -153,9 +153,9 @@ fn run_ref(s: &str,quartads:Option<&QuartadList> )
 		ref_test("MALTRON", &layout::MALTRON_LAYOUT);
 		ref_test("RSTHD", &layout::RSTHD);
 		ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
-		//ref_test("DABEST", &layout::DABEST);
-		//ref_test("THE_ONE", &layout::The_One);
-		//ref_test("X1", &layout::X1);
+		ref_test("DABEST", &layout::DABEST);
+		ref_test("THE_ONE", &layout::THE_ONE);
+		ref_test("X1", &layout::X1);
 	};
 	
 	match  quartads {
