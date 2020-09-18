@@ -18,7 +18,9 @@ This code follows the simulated annealing method used in [Carpalx](http://mkweb.
 
 You'll need a recent-ish version of [Rust](https://www.rust-lang.org/).
 
-Then: `cargo run --release -- run corpus/books.short.txt`.
+Then: `cargo run --release -- run-ref corpus/books.short.txt` to show the
+scores of the built-in reference layouts;
+or:   `cargo run --release -- run corpus/books.short.txt` to run the simulator.
 
 ## Installing the (upcoming) optimal keyboard layout
 
