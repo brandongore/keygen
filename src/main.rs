@@ -51,7 +51,7 @@ fn main()
 	let command = &args[1];
 	let matches = match opts.parse(&args[2..]) {
 		Ok(m) => { m }
-		Err(f) => { panic!(f.to_string()) }
+		Err(f) => { panic!("{}",f.to_string()) }
 	};
 
 	// --help
@@ -88,7 +88,7 @@ fn main()
 	// Read layout, if applicable.
 	let _layout;
 	let layout = match matches.free.get(1) {
-		None => &layout::QWERTY_LAYOUT,
+		None => &layout::BASE,
 		Some(layout_filename) => {
 			let mut f = match File::open(layout_filename) {
 				Ok(f) => f,
@@ -125,10 +125,10 @@ fn main()
 
 fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
-	let init_pos_map = layout.get_position_map();
+	//let init_pos_map = layout.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s);
 	
-	run_ref(s, Some(&quartads));
+	//run_ref(s, Some(&quartads));
 	simulator::simulate(&quartads, layout, debug, top, swaps);
 	
 }
@@ -144,18 +144,18 @@ fn run_ref(s: &str,quartads:Option<&QuartadList> )
 			simulator::print_result(&penalty);
 			println!("");
 		};
-		ref_test("QWERTY", &layout::QWERTY_LAYOUT);
-		ref_test("DVORAK", &layout::DVORAK_LAYOUT);
-		ref_test("MTGAP", &layout::MTGAP_LAYOUT);
-		ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
-		ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
-		ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
-		ref_test("MALTRON", &layout::MALTRON_LAYOUT);
-		ref_test("RSTHD", &layout::RSTHD);
-		ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
-		ref_test("DABEST", &layout::DABEST);
-		ref_test("THE_ONE", &layout::THE_ONE);
-		ref_test("X1", &layout::X1);
+		ref_test("QWERTY", &layout::BASE);
+		// ref_test("DVORAK", &layout::DVORAK_LAYOUT);
+		// ref_test("MTGAP", &layout::MTGAP_LAYOUT);
+		// ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
+		// ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
+		// ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
+		// ref_test("MALTRON", &layout::MALTRON_LAYOUT);
+		// ref_test("RSTHD", &layout::RSTHD);
+		// ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
+		// ref_test("DABEST", &layout::DABEST);
+		// ref_test("THE_ONE", &layout::THE_ONE);
+		// ref_test("X1", &layout::X1);
 	};
 	
 	match  quartads {
@@ -168,7 +168,7 @@ fn run_ref(s: &str,quartads:Option<&QuartadList> )
 
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
 {
-	let init_pos_map = layout::QWERTY_LAYOUT.get_position_map();
+	let init_pos_map = layout::BASE.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s);
 	let len = s.len();
 

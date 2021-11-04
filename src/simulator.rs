@@ -32,10 +32,11 @@ pub fn simulate<'a>(
     top_layouts: usize,
     num_swaps: usize,
 ) {
-    const CYCLES: i32 = 205000;
+    // const CYCLES: i32 = 205000;
+    const CYCLES: i32 = 256;//25;
     const ITERATIONS: i32 = 5;
     let threads = num_cpus::get();
-    let BEST_LAYOUTS_KEPT: usize = threads * 3;
+    let BEST_LAYOUTS_KEPT: usize = threads * 2;
 
     let initial_penalty = || penalty::calculate_penalty(&quartads, init_layout);
     let mut best_layouts: Vec<BestLayoutsEntry> =
@@ -76,10 +77,10 @@ pub fn simulate<'a>(
                         accepted_layout = curr_layout.clone();
                     }
                     if cycle % printFrequency  == 0 {
-                        print_result(&bestLayout);
+                        //print_result(&bestLayout);
                     }
                 }
-                print_result(&entry);
+                //print_result(&entry);
                 bestLayout
             })
             .collect();
@@ -91,8 +92,11 @@ pub fn simulate<'a>(
         best_layouts.truncate(BEST_LAYOUTS_KEPT as usize);
     }
     println!("................................................");
+
     for entry in best_layouts {
+        println!("************************************************");
         print_result(&entry);
+        println!("************************************************");
     }
 }
 
