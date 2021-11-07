@@ -144,18 +144,7 @@ fn run_ref(s: &str,quartads:Option<&QuartadList> )
 			simulator::print_result(&penalty);
 			println!("");
 		};
-		ref_test("QWERTY", &layout::BASE);
-		// ref_test("DVORAK", &layout::DVORAK_LAYOUT);
-		// ref_test("MTGAP", &layout::MTGAP_LAYOUT);
-		// ref_test("COLEMAK", &layout::COLEMAK_LAYOUT);
-		// ref_test("QGMLWY", &layout::QGMLWY_LAYOUT);
-		// ref_test("ARENSITO", &layout::ARENSITO_LAYOUT);
-		// ref_test("MALTRON", &layout::MALTRON_LAYOUT);
-		// ref_test("RSTHD", &layout::RSTHD);
-		// ref_test("CAPEWELL", &layout::CAPEWELL_LAYOUT);
-		// ref_test("DABEST", &layout::DABEST);
-		// ref_test("THE_ONE", &layout::THE_ONE);
-		// ref_test("X1", &layout::X1);
+		ref_test("BASE", &layout::BASE);
 	};
 	
 	match  quartads {
