@@ -83,8 +83,12 @@ impl fmt::Display for KeyPenalty {
 }
 
 static BASE_PENALTY: KeyMap<f64> = [
-    5.0, 0.5, 0.5, 1.5, 2.5, 2.5, 1.5, 0.5, 0.5, 5.0, 5.0, 2.5, 0.0, 0.0, 0.0, 1.0, 1.5, 0.0, 0.0,
-    0.0, 1.5, 5.0, 20.0, 2.0, 1.5, 1.0, 5.0, 5.0, 1.0, 1.5, 2.0, 20.0, 0.0, 0.0,
+        8.0, 8.0, 10.0,     10.0, 8.0, 8.0,
+         1.0, 0.5, 2.0,     2.0, 0.5, 1.0,
+    8.0, 0.5, 0.5, 1.5,     1.5, 0.5, 0.5, 8.0,
+    8.0, 2.0, 2.0, 2.5,     2.5, 2.0, 2.0, 8.0,
+                   5.0,     5.0,
+         5.0, 5.0, 5.0,     5.0, 5.0, 5.0,
 ];
 
 static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
@@ -302,12 +306,14 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             // 5: Pinky/ring twist.
             if (curr.finger == Finger::Ring
                 && old1.finger == Finger::Pinky
-                && (curr.row == Row::Home && old1.row == Row::Top
-                    || curr.row == Row::Bottom && old1.row == Row::Top))
+                && (curr.row == Row::MiddleBottom && old1.row == Row::Bottom))
                 || (curr.finger == Finger::Pinky
                     && old1.finger == Finger::Ring
-                    && (curr.row == Row::Top && old1.row == Row::Home
-                        || curr.row == Row::Top && old1.row == Row::Bottom))
+                    && (curr.row == Row::MiddleBottom && old1.row == Row::Top
+                        || curr.row == Row::MiddleBottom && old1.row == Row::MiddleTop
+                        || curr.row == Row::Bottom && old1.row == Row::Top
+                        || curr.row == Row::Bottom && old1.row == Row::MiddleTop
+                        || curr.row == Row::Bottom && old1.row == Row::MiddleBottom))
             {
                 log(5, 10.0);
             }
@@ -384,8 +390,8 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             }
 
             // 12: Twist.
-            if ((curr.row == Row::Top && old1.row == Row::Home && old2.row == Row::Bottom)
-                || (curr.row == Row::Bottom && old1.row == Row::Home && old2.row == Row::Top))
+            if ((curr.row == Row::Top && old1.row == Row::MiddleTop && old2.row == Row::Bottom)
+                || (curr.row == Row::Bottom && old1.row == Row::MiddleTop && old2.row == Row::Top))
                 && ((is_roll_out(curr.finger, old1.finger)
                     && is_roll_out(old1.finger, old2.finger))
                     || (is_roll_in(curr.finger, old1.finger)
