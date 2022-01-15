@@ -178,13 +178,15 @@ pub fn simulate<'a>(
 pub fn print_result<'a>(item: &BestLayoutsEntry) {
     let layout = &item.layout;
     let total = item.penalty.total;
+    let missed_qaurtads = item.penalty.missed_qaurtads;
+    let total_quartads = item.penalty.total_quartads;
     let len = item.penalty.len;
     let penalties = &item.penalty.penalties;
     let penalty = &item.penalty;
     let fingers = &penalty.fingers;
     let show_all = false;
     print!(
-        "{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
         format!("\n{}\n", layout),
         format!(
             "total: {0:<10.2}; scaled: {1:<10.4}\n",
@@ -229,6 +231,11 @@ pub fn print_result<'a>(item: &BestLayoutsEntry) {
         ),
 
         format!("{:^5.1}| {:^5.1}\n", penalty.hands[0] as f64 * 100.0 / len as f64 , penalty.hands[1] as f64 * 100.0 / len as f64 ),
+        "----------------------------------------------------------------------\n",
+        format!("missed quartads : {}\n", missed_qaurtads),
+        format!("total quartads : {}\n", total_quartads),
+        format!("percentage missed quartads : {}\n", (missed_qaurtads as f64/(total_quartads) as f64)* 100.0),
+        "----------------------------------------------------------------------\n",
         "##########################################################################\n"
     );
 }

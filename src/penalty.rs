@@ -28,11 +28,13 @@ pub struct Penalty {
     pub hands: [i64; 2],
     pub total: f64,
     pub len: i64,
+    pub missed_qaurtads: i64,
+    pub total_quartads: i64,
 }
 impl Penalty {
     pub fn new() -> Penalty {
         let mut penalties = Vec::new();
-        for desc in PenaltyDescriptions.into_iter() {
+        for desc in PenaltyDescriptions.iter() {
             penalties.push(KeyPenalty {
                 name: desc.name,
                 show: desc.show,
@@ -46,6 +48,8 @@ impl Penalty {
             hands: [0; 2],
             total: 0.0,
             len : 0,
+            missed_qaurtads : 0,
+            total_quartads: 0,
         }
     }
 }
@@ -200,6 +204,12 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
     let mut result = Penalty::new();
     let position_map = layout.get_position_map();
 
+    // println!("==================POS========================");
+    // print!(
+    //     "{}",
+    //     format!("{}", position_map));
+    // println!("==================POS========================");
+
     for (string, count) in &quartads.map {
         let mut chars = string.chars().into_iter();
 
@@ -237,11 +247,17 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
         match curr.hand {
             Hand::Left => {
                 result.hands[0] += count;
+                result.total_quartads += 1;
                 useFinger(&mut result, 0);
             }
             Hand::Right => {
                 result.hands[1] += count;
+                result.total_quartads += 1;
                 useFinger(&mut result, 4);
+            }
+            Hand::Thumb => {
+                result.missed_qaurtads += 1;
+                result.total_quartads += 1;
             }
             _ => {}
         }

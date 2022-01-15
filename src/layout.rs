@@ -27,8 +27,6 @@ pub struct Layer(KeyMap<char>);
 #[derive(Clone)]
 pub struct Layout(Layer, Layer);
 
-
-
 pub struct LayoutPosMap([Option<KeyPress>; 128]);
 
 #[derive(Clone)]
@@ -79,24 +77,24 @@ pub struct KeyPress
 
 const NUM_OF_KEYS: usize = 36;
 
-// q w e r t y u i o p [ { ] } \ |
+// q w e r t y u i o p [ ] { } \ |
 // a s d f g h j k l ; : ' "
 // z x c v b n m , < . > / ?
 // ! @ $ % ^ & * ( ) - _ = +
 
 pub static BASE: Layout = Layout(
-	Layer([          'e', 'r', 't',   'y', 'u', 'i', 
+	Layer([         '\'', 'r', 'c',   'y', 'u', 'i', 
 	                 'd', 'f', 'g',   'h', 'j', 'k',
-		        'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
+		        'q', 'w', 'x', 'e',   'n', 'm', 'o', 'p', 
 				'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
 							  '\0',   '\0',
-				     ' ','\0','\0',   '\0', '\0', '\n']),
-	Layer([          'E', 'R', 'T',   'Y', 'U', 'I',
+				     ' ','\0','\0',   '\0', '\n', 't']),
+	Layer([         '\"', 'R', 'C',   'Y', 'U', 'I',
 		             'D', 'F', 'G',   'H', 'J', 'K',
-		        'Q', 'W', 'X', 'C',   'N', 'M', 'O', 'P',
+		        'Q', 'W', 'X', 'E',   'N', 'M', 'O', 'P',
 		        'A', 'S', 'Z', 'V',   'B', '<', '>', 'L',
                               '\0',   '\0',
-					 ' ','\0','\0',   '\0','\0','\n']));
+					 ' ','\0','\0',   '\0','\n','T']));
 
 pub static SWAPPABLE_MAP: KeyMap<bool>= [
 	       true,  true,  true,    true,  true,  true,  
@@ -250,6 +248,27 @@ impl LayoutPosMap
 		} else {
 			&KP_NONE
 		}
+	}
+
+
+}
+
+impl fmt::Display for LayoutPosMap
+{
+	fn fmt(&self, f: &mut fmt::Formatter)
+	-> fmt::Result
+	{
+		let LayoutPosMap(ref map) = *self;
+		let mut keys:Vec<String> = Vec::new();
+
+		for item in map{
+			match item{
+				Some(f) => keys.push(f.kc.to_string()),
+				None => ()
+			}
+		}
+
+		write!(f, "{}", keys.join(" "))
 	}
 }
 
