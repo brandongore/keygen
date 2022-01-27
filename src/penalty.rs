@@ -1,3 +1,4 @@
+use crate::layout;
 use std;
 use std::collections::HashMap;
 use std::fmt;
@@ -9,6 +10,7 @@ use std::vec::Vec;
 
 use layout::*;
 
+#[derive(Clone, Copy)]
 pub struct KeyPenaltyDescription {
     name: &'static str,
     show: bool,

@@ -4,15 +4,17 @@ mod layout;
 mod penalty;
 mod annealing;
 mod simulator;
+mod timer;
 
-
-use std::env;
+use std::cmp::Ordering;
+use std::{env, collections::HashMap};
 use std::fs::File;
 use std::io::Read;
 use getopts::Options;
 use penalty::QuartadList;
+use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
-
+use itertools::Itertools; 
 
 //  made thumbs their own hand, 
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
@@ -36,6 +38,9 @@ use penalty::QuartadList;
 */
 fn main()
 {
+	let ftimer =&mut FuncTimer::new();
+	ftimer.start(String::from("main"));
+
 	let mut opts = Options::new();
 	opts.optflag("h", "help", "print this help menu");
 	opts.optflag("d", "debug", "show debug logging");
@@ -116,21 +121,27 @@ fn main()
 	let swaps = numopt(matches.opt_str("s"), 2usize);
 
 	match command.as_ref() {
-		"run" => run(&corpus[..], layout, debug, top, swaps),
+		"run" => run(&corpus[..], layout, debug, top, swaps, ftimer),
 		"run-ref" => run_ref(&corpus[..], None),
 		_ => print_usage(progname, opts),
 		//"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
 	};
+	ftimer.stop(String::from("main"));
+
+	let timer_display = FuncTimerDisplay::new(ftimer);
+
+	print!("{}", timer_display);
 }
 
-fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize)
+fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize, timer: &mut HashMap<String, TimerState>)
 {
+	timer.start(String::from("run"));
 	//let init_pos_map = layout.get_position_map();
 	let quartads = penalty::prepare_quartad_list(s);
 	
 	//run_ref(s, Some(&quartads));
-	simulator::simulate(&quartads, layout, debug, top, swaps);
-	
+	simulator::simulate(&quartads, layout, debug, top, swaps, timer);
+	timer.stop(String::from("run"));
 }
 
 fn run_ref(s: &str,quartads:Option<&QuartadList> )

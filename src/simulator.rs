@@ -3,17 +3,20 @@ extern crate num_cpus;
 extern crate rand;
 extern crate rayon;
 
+use crate::annealing;
+use crate::layout;
+use crate::penalty;
+use crate::timer::Timer;
+use crate::timer::TimerState;
+
 //use self::rand::{random, thread_rng};
 use self::rand::*;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 //use std::collections::;
 use self::rayon::prelude::*;
 use std::iter;
 use std::*;
-
-use annealing;
-use layout;
-use penalty;
 
 use penalty::*;
 
@@ -31,12 +34,12 @@ pub fn simulate<'a>(
     debug: bool,
     top_layouts: usize,
     num_swaps: usize,
+    timer: &mut HashMap<String, TimerState>,
 ) {
-    // const CYCLES: i32 = 205000;
-    const CYCLES: i32 = 256;//25;
-    const ITERATIONS: i32 = 5;
-    let threads = num_cpus::get();
-    let BEST_LAYOUTS_KEPT: usize = threads * 2;
+    const CYCLES: i32 = 1;//205000;
+    const ITERATIONS: i32 = 1;
+    let threads = 1;//num_cpus::get();
+    let BEST_LAYOUTS_KEPT: usize = 1;//threads * 2;
 
     let initial_penalty = || penalty::calculate_penalty(&quartads, init_layout);
     let mut best_layouts: Vec<BestLayoutsEntry> =
@@ -45,9 +48,14 @@ pub fn simulate<'a>(
     // in each iteration each thread takes a random layout and tries to optimalize it for 5000 cycles;
     //results are appended to bestLayouts, which is then sorted and truntcated back to best ten
     for it_num in 1..ITERATIONS + 1 {
+        timer.start(String::from(format!("iteration{}", it_num)));
+        //prevent bad indexing when length of best layouts is 1
+        let mut normalize_index: i32 = if best_layouts.len() > 1 { 1 } else { 0 };
+        
+        if best_layouts.len() > 1 { normalize_index = 1 } else { normalize_index = 0};
         println!("iteration: {}", it_num);
         let iteration: Vec<BestLayoutsEntry> = (0..threads)
-            .map(|i| &best_layouts[best_layouts.len() - 1 - i as usize])
+            .map(|i| &best_layouts[best_layouts.len() -1 -(i * normalize_index as usize) as usize])
             .collect::<Vec<&BestLayoutsEntry>>()
             .into_par_iter()
             .map(|entry| {
@@ -90,6 +98,7 @@ pub fn simulate<'a>(
         }
         best_layouts.sort_unstable();
         best_layouts.truncate(BEST_LAYOUTS_KEPT as usize);
+        timer.stop(String::from(format!("iteration{}", it_num)));
     }
     println!("................................................");
 
