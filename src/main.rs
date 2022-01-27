@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::Read;
 use getopts::Options;
 use penalty::QuartadList;
-use timer::{FuncTimer, Timer, TimerState};
+use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
 use itertools::Itertools; 
 
@@ -128,28 +128,9 @@ fn main()
 	};
 	ftimer.stop(String::from("main"));
 
-	let mut sorted_times: Vec<(&String, &TimerState)> = ftimer.iter().collect();
-    sorted_times.sort_by(|a, b| b.1.start_time.cmp(&a.1.start_time));
-	sorted_times.reverse();
+	let timer_display = FuncTimerDisplay::new(ftimer);
 
-	print!(
-        "{}{}{}",
-
-	format!(
-		"\n{:?} | {:?} | {:?}\n",
-		"Name", "process time", "elapsed time", 
-	),
-	"----------------------------------------------------------------------\n",
-	sorted_times
-		.into_iter()
-		.map(|(key, value)| {
-			return format!(
-				"{:?} | {}\n",
-				key,
-				format!("{}",value)
-			);
-		})
-		.collect::<Vec<String>>().join(""));
+	print!("{}", timer_display);
 }
 
 fn run(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize, timer: &mut HashMap<String, TimerState>)

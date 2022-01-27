@@ -25,4 +25,4 @@ codegen-units = 1
 features = ["func_timer"]
 
 [features]
-"func_timer" = []
+func_timer = []

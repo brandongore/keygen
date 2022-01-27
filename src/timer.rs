@@ -1,34 +1,43 @@
+use quanta::Clock;
 use std::collections::HashMap;
-use std::time::Duration;
 use std::fmt;
-use quanta::{Clock};
+use std::time::Duration;
 
 pub type FuncTimer = HashMap<String, TimerState>;
+
+#[derive(Clone)]
+pub struct FuncTimerDisplay(FuncTimer);
+
+impl FuncTimerDisplay {
+    pub fn new(t: &FuncTimer) -> Self {
+        FuncTimerDisplay(t.clone())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TimerState {
     pub current_clock: Clock,
     pub start_time: u64,
-    pub end_time: u64
+    pub end_time: u64,
 }
 
 impl TimerState {
     pub fn new() -> Self {
-        let clock = Clock::new(); 
+        let clock = Clock::new();
         let start = clock.start();
 
         TimerState {
             current_clock: clock,
             start_time: start,
-            end_time: start
+            end_time: start,
         }
     }
 
-    pub fn start_time(&mut self){
+    pub fn start_time(&mut self) {
         self.start_time = self.current_clock.start();
     }
 
-    pub fn stop_time(&mut self){
+    pub fn stop_time(&mut self) {
         self.end_time = self.current_clock.end();
     }
 
@@ -38,22 +47,28 @@ impl TimerState {
 }
 
 pub trait Timer {
-    fn start(&mut self, _: String) { return }
+    fn start(&mut self, _: String) {
+        return;
+    }
 
-    fn stop(&mut self, _: String) { return }
+    fn stop(&mut self, _: String) {
+        return;
+    }
 
-    fn elapsed(&self, _: String) -> Option<Duration> { return None }
+    fn elapsed(&self, _: String) -> Option<Duration> {
+        return None;
+    }
 }
 
 impl Timer for HashMap<String, TimerState> {
-    #[cfg(feature="func_timer")]
+    #[cfg(feature = "func_timer")]
     fn start(&mut self, name: String) {
         self.entry(name)
-        .and_modify(|entry| entry.start_time())
-        .or_insert(TimerState::new());
+            .and_modify(|entry| entry.start_time())
+            .or_insert(TimerState::new());
     }
 
-    #[cfg(feature="func_timer")]
+    #[cfg(feature = "func_timer")]
     fn stop(&mut self, name: String) {
         match self.get_mut(&name) {
             None => println!("Warning: timer {} was stopped but does not exist", name),
@@ -63,18 +78,60 @@ impl Timer for HashMap<String, TimerState> {
         }
     }
 
-    #[cfg(feature="func_timer")]
+    #[cfg(feature = "func_timer")]
     fn elapsed(&self, name: String) -> Option<Duration> {
         match self.get(&name) {
             None => None,
-            Some(ts) => Some(ts.elapsed())
+            Some(ts) => Some(ts.elapsed()),
         }
     }
 }
 
+#[cfg(feature = "func_timer")]
 impl fmt::Display for TimerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} ns | {} ms", self.elapsed().as_nanos(), self.elapsed().as_millis())
+        write!(
+            f,
+            "{} ns | {} ms",
+            self.elapsed().as_nanos(),
+            self.elapsed().as_millis()
+        )
+    }
+}
+
+#[cfg(feature = "func_timer")]
+impl fmt::Display for FuncTimerDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut sorted_times: Vec<(&String, &TimerState)> = self.0.iter().collect();
+        sorted_times.sort_by(|a, b| b.1.start_time.cmp(&a.1.start_time));
+        sorted_times.reverse();
+        write!(
+            f,
+            "{}{}{}",
+            format!(
+                "\n{:?} | {:?} | {:?}\n",
+                "Name", "process time", "elapsed time",
+            ),
+            "----------------------------------------------------------------------\n",
+            sorted_times
+                .into_iter()
+                .map(|(key, value)| {
+                    return format!("{:?} | {}\n", key, format!("{}", value));
+                })
+                .collect::<Vec<String>>()
+                .join("")
+        )
+    }
+}
+
+#[cfg(not(feature = "func_timer"))]
+impl fmt::Display for FuncTimerDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            ""
+        )
     }
 }
 
