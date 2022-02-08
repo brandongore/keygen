@@ -2,8 +2,21 @@
 
 extern crate rand;
 
-use std::fmt;
+use std::{fmt, ops::{Index, IndexMut}};
 use self::rand::random;
+
+use serde::{Deserialize, Serialize};
+
+extern crate serde;
+
+use crate::layout;
+
+use serde_big_array::big_array;
+
+big_array! {
+    BigArray;
+    layout::NUM_OF_KEYS,
+}
 
 /* ----- *
  * TYPES *
@@ -18,13 +31,48 @@ use self::rand::random;
 //           28 | 29 (thumb keys)
 //     30 31 32 | 33 34 35
 
-pub type KeyMap<T> =  [T; NUM_OF_KEYS];
+pub type KeyMap = [char; NUM_OF_KEYS];
+pub type KeyIndexMap = [u32; NUM_OF_KEYS];
+pub type MaskMap = [bool; NUM_OF_KEYS];
+pub type SwapMap = [bool; NUM_OF_KEYS];
+pub type FingerMap = [Finger; NUM_OF_KEYS];
+pub type HandMap = [Hand; NUM_OF_KEYS];
+pub type RowMap = [Row; NUM_OF_KEYS];
+pub type CenterMap = [bool; NUM_OF_KEYS];
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LayerKeys{
+	#[serde(with = "BigArray")]
+    keys: KeyMap,
+}
+
+impl LayerKeys {
+	pub const fn new(values: KeyMap) -> Self {
+        LayerKeys {
+            keys: values
+        }
+    }
+}
+
+impl Index<usize> for LayerKeys {
+    type Output = char;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.keys[index]
+    }
+}
+
+impl IndexMut<usize> for LayerKeys {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+		&mut self.keys[index]
+    }
+}
 
 
-#[derive(Clone)]
-pub struct Layer(KeyMap<char>);
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Layer(LayerKeys);
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Layout(Layer, Layer);
 
 
@@ -32,7 +80,7 @@ pub struct Layout(Layer, Layer);
 pub struct LayoutPosMap([Option<KeyPress>; 128]);
 
 #[derive(Clone)]
-pub struct LayoutShuffleMask(KeyMap<bool>);
+pub struct LayoutShuffleMask(MaskMap);
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Finger 
@@ -77,28 +125,42 @@ pub struct KeyPress
 * STATICS *
 * ------- */
 
-const NUM_OF_KEYS: usize = 36;
+pub const NUM_OF_KEYS: usize = 36;
 
 // q w e r t y u i o p [ { ] } \ |
 // a s d f g h j k l ; : ' "
 // z x c v b n m , < . > / ?
 // ! @ $ % ^ & * ( ) - _ = +
 
+// pub const firstLayer: LayerKeys = LayerKeys::new([          'e', 'r', 't',   'y', 'u', 'i', 
+// 'd', 'f', 'g',   'h', 'j', 'k',
+// 'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
+// 'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
+// 		 '\0',   '\0',
+// ' ','\0','\0',   '\0', '\0', '\n']);
+
+// pub const secondLayer: LayerKeys = LayerKeys::new([          'e', 'r', 't',   'y', 'u', 'i', 
+// 'd', 'f', 'g',   'h', 'j', 'k',
+// 'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
+// 'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
+// 		 '\0',   '\0',
+// ' ','\0','\0',   '\0', '\0', '\n']);
+
 pub static BASE: Layout = Layout(
-	Layer([          'e', 'r', 't',   'y', 'u', 'i', 
+	Layer(LayerKeys::new([          'e', 'r', 't',   'y', 'u', 'i', 
 	                 'd', 'f', 'g',   'h', 'j', 'k',
 		        'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
 				'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
 							  '\0',   '\0',
-				     ' ','\0','\0',   '\0', '\0', '\n']),
-	Layer([          'E', 'R', 'T',   'Y', 'U', 'I',
+				     ' ','\0','\0',   '\0', '\0', '\n'])),
+	Layer(LayerKeys::new([          'E', 'R', 'T',   'Y', 'U', 'I',
 		             'D', 'F', 'G',   'H', 'J', 'K',
 		        'Q', 'W', 'X', 'C',   'N', 'M', 'O', 'P',
 		        'A', 'S', 'Z', 'V',   'B', '<', '>', 'L',
                               '\0',   '\0',
-					 ' ','\0','\0',   '\0','\0','\n']));
+					 ' ','\0','\0',   '\0','\0','\n'])));
 
-pub static SWAPPABLE_MAP: KeyMap<bool>= [
+pub static SWAPPABLE_MAP: SwapMap= [
 	       true,  true,  true,    true,  true,  true,  
 	       true,  true,  true,    true,  true,  true,  
 	true,  true,  true,  true,    true,  true,  true,  true,  
@@ -108,7 +170,7 @@ pub static SWAPPABLE_MAP: KeyMap<bool>= [
 ];
  
 
-static KEY_FINGERS: KeyMap<Finger> = [
+static KEY_FINGERS: FingerMap = [
 					Finger::Ring, Finger::Middle, Finger::Index, 	Finger::Index, Finger::Middle, Finger::Ring,
 					Finger::Ring, Finger::Middle, Finger::Index,	Finger::Index, Finger::Middle, Finger::Ring,
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
@@ -117,7 +179,7 @@ static KEY_FINGERS: KeyMap<Finger> = [
 				   Finger::Thumb, Finger::Thumb, Finger::Thumb, 	Finger::Thumb, Finger::Thumb, Finger::Thumb
 ];
 
-static KEY_HANDS: KeyMap<Hand> = [
+static KEY_HANDS: HandMap = [
 				Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, 
 				Hand::Left, Hand::Left, Hand::Left,    	Hand::Right, Hand::Right, Hand::Right, 
 	Hand::Left, Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, Hand::Right, 
@@ -126,7 +188,7 @@ static KEY_HANDS: KeyMap<Hand> = [
 			 Hand::Thumb, Hand::Thumb, Hand::Thumb, 	Hand::Thumb, Hand::Thumb, Hand::Thumb
 ];
 
-static KEY_ROWS: KeyMap<Row> = [
+static KEY_ROWS: RowMap = [
 												  Row::Top, Row::Top, Row::Top, 			Row::Top, Row::Top, Row::Top,
 	  							Row::MiddleTop, Row::MiddleTop, Row::MiddleTop, 			Row::MiddleTop, Row::MiddleTop, Row::MiddleTop,
 	Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, 			Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom,  
@@ -135,7 +197,7 @@ static KEY_ROWS: KeyMap<Row> = [
 											Row::Thumb, Row::Thumb, Row::Thumb, 			Row::Thumb, Row::Thumb, Row::Thumb
 ];
 
-static KEY_CENTER_COLUMN: KeyMap<bool> = [
+static KEY_CENTER_COLUMN: CenterMap = [
 			false, false, true,    true, false, false,
 			false, false, true,    true, false, false,
 	 false, false, false, true,    true, false, false, false,
@@ -146,7 +208,7 @@ static KEY_CENTER_COLUMN: KeyMap<bool> = [
 
 pub static KP_NONE: Option<KeyPress> = None;
 
-static LAYOUT_FILE_IDXS: KeyMap<usize> = [
+static LAYOUT_FILE_IDXS: KeyIndexMap = [
 		 0,  1,  2,    3,  4,  5, 
 		 6,  7,  8,    9,  10, 11,
 	12, 13, 14, 15,    16, 17, 18, 19, 
@@ -169,11 +231,11 @@ impl Layout
 		
 		for i in 0..36 {
 			let file_i = LAYOUT_FILE_IDXS[i];
-			lower[i] = *s.get(file_i).unwrap_or(&'\0');
-			upper[i] = *s.get(file_i + 40).unwrap_or(&'\0');
+			lower[i] = *s.get(file_i as usize).unwrap_or(&'\0');
+			upper[i] = *s.get(file_i as usize + 40).unwrap_or(&'\0');
 		}
 
-		Layout(Layer(lower), Layer(upper))
+		Layout(Layer(LayerKeys::new(lower)), Layer(LayerKeys::new(upper)))
 	}
 
 	pub fn shuffle(&mut self, times: usize)
@@ -224,10 +286,10 @@ impl Layer
 	fn fill_position_map(&self, map: &mut [Option<KeyPress>; 128])
 	{
 		let Layer(ref layer) = *self;
-		for (i, c) in layer.into_iter().enumerate() {
-			if *c < (128 as char) {
-				map[*c as usize] = Some(KeyPress {
-					kc: *c,
+		for (i, c) in layer.keys.into_iter().enumerate() {
+			if c < (128 as char) {
+				map[c as usize] = Some(KeyPress {
+					kc: c,
 					pos: i,
 					finger: KEY_FINGERS[i],
 					hand: KEY_HANDS[i],

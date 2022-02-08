@@ -1,4 +1,6 @@
 use quanta::Clock;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Deserialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -12,6 +14,13 @@ impl FuncTimerDisplay {
     pub fn new(t: &FuncTimer) -> Self {
         FuncTimerDisplay(t.clone())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimerDisplayContainer {
+    pub key: String,
+    pub nanos: u128,
+    pub ms: u128,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +131,19 @@ impl fmt::Display for FuncTimerDisplay {
                 .join("")
         )
     }
+}
+
+#[cfg(feature = "func_timer")]
+pub fn get_sorted_times(display_timer: &FuncTimerDisplay) -> Vec<TimerDisplayContainer> {
+    let mut sorted_times: Vec<(&String, &TimerState)> = display_timer.0.iter().collect();
+    sorted_times.sort_by(|a, b| b.1.start_time.cmp(&a.1.start_time));
+    sorted_times.reverse();
+    return sorted_times
+            .into_iter()
+            .map(|(key, value)| {
+                return TimerDisplayContainer {key: key.to_string(), nanos: value.elapsed().as_nanos(), ms: value.elapsed().as_millis()};
+            })
+            .collect::<Vec<TimerDisplayContainer>>();
 }
 
 #[cfg(not(feature = "func_timer"))]

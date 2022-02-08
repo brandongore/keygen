@@ -5,8 +5,8 @@ mod penalty;
 mod annealing;
 mod simulator;
 mod timer;
+mod file_manager;
 
-use std::cmp::Ordering;
 use std::{env, collections::HashMap};
 use std::fs::File;
 use std::io::Read;
@@ -14,7 +14,7 @@ use getopts::Options;
 use penalty::QuartadList;
 use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
-use itertools::Itertools; 
+use crate::file_manager::save_benchmark; 
 
 //  made thumbs their own hand, 
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
@@ -129,6 +129,8 @@ fn main()
 	ftimer.stop(String::from("main"));
 
 	let timer_display = FuncTimerDisplay::new(ftimer);
+
+	save_benchmark(&timer_display);
 
 	print!("{}", timer_display);
 }

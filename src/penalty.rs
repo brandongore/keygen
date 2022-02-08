@@ -2,7 +2,6 @@ use crate::layout;
 use std;
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::Range;
 /// Methods for calculating the penalty of a keyboard layout given an input
 /// corpus string.
 //use layout;
@@ -10,20 +9,24 @@ use std::vec::Vec;
 
 use layout::*;
 
+use serde::{Deserialize, Serialize};
+
+pub type PenaltyMap = [f64; layout::NUM_OF_KEYS];
+
 #[derive(Clone, Copy)]
 pub struct KeyPenaltyDescription {
     name: &'static str,
     show: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct KeyPenalty {
-    pub name: &'static str,
+    pub name: String,
     pub times: f64,
     pub total: f64,
     pub show: bool,
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Penalty {
     pub penalties: Vec<KeyPenalty>,
     pub fingers: [i64; 8],
@@ -36,7 +39,7 @@ impl Penalty {
         let mut penalties = Vec::new();
         for desc in PenaltyDescriptions.into_iter() {
             penalties.push(KeyPenalty {
-                name: desc.name,
+                name: desc.name.to_string(),
                 show: desc.show,
                 total: 0.0,
                 times: 0.0,
@@ -51,7 +54,8 @@ impl Penalty {
         }
     }
 }
-#[derive(Clone)]
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BestLayoutsEntry {
     pub layout: Layout,
     pub penalty: Penalty,
@@ -84,7 +88,7 @@ impl fmt::Display for KeyPenalty {
     }
 }
 
-static BASE_PENALTY: KeyMap<f64> = [
+static BASE_PENALTY: PenaltyMap = [
         8.0, 8.0, 10.0,     10.0, 8.0, 8.0,
          1.0, 0.5, 2.0,     2.0, 0.5, 1.0,
     8.0, 0.5, 0.5, 1.5,     1.5, 0.5, 0.5, 8.0,
