@@ -2,7 +2,6 @@ use crate::layout;
 use std;
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::Range;
 /// Methods for calculating the penalty of a keyboard layout given an input
 /// corpus string.
 //use layout;
@@ -10,33 +9,96 @@ use std::vec::Vec;
 
 use layout::*;
 
+use serde::{Deserialize, Serialize};
+
+pub type PenaltyMap = [f64; layout::NUM_OF_KEYS];
+
+// Penalise 30 points for using the same finger twice on different keys.
+// An extra penalty of the same amount for each usage of the center row.
+const SAME_FINGER_PENALTY: Option<f64> = Some(30.0);
+
+// Penalise 30 points for jumping from top to bottom row or from bottom to
+// top row on the same finger.
+const LONG_JUMP_PENALTY: Option<f64> = Some(30.0);
+
+// Penalise 1 point for jumping from top to bottom row or from bottom to
+// top row on the same hand.
+const LONG_JUMP_HAND_PENALTY: Option<f64> = Some(1.0);
+
+// Penalise 5 points for jumping from top to bottom row or from bottom to
+// top row on consecutive fingers, except for middle finger-top row ->
+// index finger-bottom row.
+const LONG_JUMP_CONSECUTIVE_PENALTY: Option<f64> = Some(5.0);
+
+// Penalise 10 points if the ring finger is sandwiched in between
+// the pinky and middle finger but streched out farther than those
+// two (for example AWD and KO; on Qwerty)
+const RING_STRETCH_PENALTY: Option<f64> = Some(10.0);
+
+// Penalise 1 point if the pinky follows the ring finger (inprecise movement)
+const PINKY_RING_PENALTY: Option<f64> = Some(1.0);
+
+// Penalise 10 points for awkward pinky/ring combination where the pinky
+// reaches above the ring finger, e.g. QA/AQ, PL/LP, ZX/XZ, ;./.; on Qwerty.
+const PINKY_RING_TWIST_PENALTY: Option<f64> = Some(10.0);
+
+// Penalise 20 points for reversing a roll at the end of the hand, i.e.
+// using the ring, pinky, then middle finger of the same hand, or the
+// middle, pinky, then ring of the same hand.
+const ROLL_REVERSAL_PENALTY: Option<f64> = Some(10.0);
+
+// Penalise 0.5 points for using the same hand four times in a row.
+const SAME_HAND_PENALTY: Option<f64> = Some(0.5);
+
+// Penalise 0.5 points for alternating hands three times in a row.
+const ALTERNATING_HAND_PENALTY: Option<f64> = Some(0.5);
+
+// Penalise 0.125 points for rolling outwards.
+const ROLL_OUT_PENALTY: Option<f64> = Some(0.125);
+
+// Award 0.125 points for rolling inwards.
+const ROLL_IN_PENALTY: Option<f64> = Some(-0.125);
+
+// Penalise 5 points for using the same finger on different keys
+// with one key in between ("detached same finger bigram").
+// An extra penalty of the same amount for each usage of the center row.
+const SFB_SANDWICH_PENALTY: Option<f64> = Some(5.0);
+
+// Penalise 10 points for jumping from top to bottom row or from bottom to
+// top row on the same finger with a keystroke in between.
+const LONG_JUMP_SANDWICH_PENALTY: Option<f64> = Some(10.0);
+
+// Penalise 10 points for three consecutive keystrokes going up or down
+//  (currently only down)the three rows of the keyboard in a roll.
+const TWIST_PENALTY: Option<f64> = Some(10.0);
+
 #[derive(Clone, Copy)]
 pub struct KeyPenaltyDescription {
     name: &'static str,
     show: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct KeyPenalty {
-    pub name: &'static str,
+    pub name: String,
     pub times: f64,
     pub total: f64,
     pub show: bool,
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Penalty {
     pub penalties: Vec<KeyPenalty>,
-    pub fingers: [i64; 8],
-    pub hands: [i64; 2],
+    pub fingers: [usize; 8],
+    pub hands: [usize; 2],
     pub total: f64,
-    pub len: i64,
+    pub len: usize,
 }
 impl Penalty {
     pub fn new() -> Penalty {
         let mut penalties = Vec::new();
         for desc in PenaltyDescriptions.into_iter() {
             penalties.push(KeyPenalty {
-                name: desc.name,
+                name: desc.name.to_string(),
                 show: desc.show,
                 total: 0.0,
                 times: 0.0,
@@ -47,11 +109,12 @@ impl Penalty {
             fingers: [0; 8],
             hands: [0; 2],
             total: 0.0,
-            len : 0,
+            len: 0,
         }
     }
 }
-#[derive(Clone)]
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BestLayoutsEntry {
     pub layout: Layout,
     pub penalty: Penalty,
@@ -76,15 +139,17 @@ impl PartialOrd for BestLayoutsEntry {
     }
 }
 pub struct QuartadList<'a> {
-    pub map: HashMap<&'a str, i64>,
+    pub map: HashMap<&'a str, usize>,
 }
+
 impl fmt::Display for KeyPenalty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.name, self.total)
     }
 }
 
-static BASE_PENALTY: KeyMap<f64> = [
+#[rustfmt::skip]
+static BASE_PENALTY: PenaltyMap = [
         8.0, 8.0, 10.0,     10.0, 8.0, 8.0,
          1.0, 0.5, 2.0,     2.0, 0.5, 1.0,
     8.0, 0.5, 0.5, 1.5,     1.5, 0.5, 0.5, 8.0,
@@ -180,17 +245,12 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
     },
 ];
 
-pub fn prepare_quartad_list<'a>(
-    string: &'a str
-) -> QuartadList<'a> {
-    let mut quartads: HashMap<&str, i64> = HashMap::new();
+pub fn prepare_quartad_list<'a>(string: &'a str) -> QuartadList<'a> {
+    let mut quartads: HashMap<&str, usize> = HashMap::new();
 
     for i in 0..string.chars().count() - 4 {
         let slice = &string[i..i + 4];
-        if slice
-            .chars()
-            .all(|c| (c as i32) <= 128)
-        {
+        if slice.chars().all(|c| (c as i32) <= 128) {
             let entry = quartads.entry(slice).or_insert(0);
             *entry += 1;
         }
@@ -267,9 +327,8 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
         if curr.hand == old1.hand && curr.hand != Hand::Thumb {
             // 1: Same finger.
             if curr.finger == old1.finger && curr.pos != old1.pos {
-                let penalty =
-                    15.0 ;//+ if curr.center { 5.0 } else { 0.0 } ;
-                log(1, penalty );
+                let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
+                log(1, penalty);
             }
 
             // 2: Long jump hand.
@@ -287,7 +346,7 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
                     log(3, 20.0);
                 }
             }
-            
+
             // 4: Long jump consecutive.
             if curr.row == Row::Top && old1.row == Row::Bottom
                 || curr.row == Row::Bottom && old1.row == Row::Top
@@ -319,26 +378,25 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
             {
                 log(5, 10.0);
             }
-            
+
             // 9: Roll out.
             if is_roll_out(curr.finger, old1.finger) {
                 log(9, 1.0);
                 if curr.row == Row::Top && old1.row == Row::Bottom
-                    || curr.row == Row::Bottom && old1.row == Row::Top{
+                    || curr.row == Row::Bottom && old1.row == Row::Top
+                {
                     log(7, 10.5);
                 }
             }
 
             // 10: Roll in.
             if is_roll_in(curr.finger, old1.finger) {
-                if old1.row!= Row::Bottom&&!(
-                    curr.row == Row::Top && old1.row == Row::Bottom
-                    || curr.row == Row::Bottom && old1.row == Row::Top
-                ){
+                if old1.row != Row::Bottom
+                    && !(curr.row == Row::Top && old1.row == Row::Bottom
+                        || curr.row == Row::Bottom && old1.row == Row::Top)
+                {
                     log(10, -0.5);
-                }
-                else{
-
+                } else {
                 }
 
                 if is_roll_in2(curr.finger, old1.finger) {
@@ -348,7 +406,6 @@ pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> Bes
                     //result[9].times+=count;
                 }
             }
-            
         }
         let old2 = match *old2 {
             Some(ref o) => o,

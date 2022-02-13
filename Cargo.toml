@@ -9,10 +9,17 @@ edition = "2021"
 [dependencies]
 rand = "0.7.3"
 getopts = "0.2.21"
-rayon = "1.3.1"
+rayon = "1.5.1"
 num_cpus = "1.13.0"
 quanta = "0.9.3"
 itertools = "0.10.2"
+serde = {version = "1.0.136", features = ["derive"]}
+serde_json = "1.0.78"
+serde-big-array = "0.3.2"
+serde_derive = "1.0.136"
+chrono = "0.4.19"
+strum = "0.21"
+strum_macros = "0.21"
 
 [profile.dev]
 opt-level = 3
@@ -23,6 +30,12 @@ features = ["func_timer"]
 lto = "fat"
 codegen-units = 1
 features = ["func_timer"]
+panic = "abort"
 
 [features]
 func_timer = []
+log_benchmark = []
+log_run = []
+
+[build-dependencies]
+build-data = "0.1.3"

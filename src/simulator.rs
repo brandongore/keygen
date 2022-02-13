@@ -4,6 +4,7 @@ extern crate rand;
 extern crate rayon;
 
 use crate::annealing;
+use crate::file_manager::save_run_state;
 use crate::layout;
 use crate::penalty;
 use crate::timer::Timer;
@@ -11,22 +12,12 @@ use crate::timer::TimerState;
 
 //use self::rand::{random, thread_rng};
 use self::rand::*;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 //use std::collections::;
 use self::rayon::prelude::*;
-use std::iter;
 use std::*;
 
 use penalty::*;
-
-#[derive(Clone)]
-
-struct LL<T> {
-    item: T,
-    len: usize,
-    next: Option<Box<LL<T>>>,
-}
 
 pub fn simulate<'a>(
     quartads: &penalty::QuartadList<'a>,
@@ -100,6 +91,8 @@ pub fn simulate<'a>(
         best_layouts.truncate(BEST_LAYOUTS_KEPT as usize);
         timer.stop(String::from(format!("iteration{}", it_num)));
     }
+    save_run_state(&best_layouts);
+
     println!("................................................");
 
     for entry in best_layouts {
