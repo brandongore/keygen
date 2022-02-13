@@ -40,7 +40,7 @@ pub type HandMap = [Hand; NUM_OF_KEYS];
 pub type RowMap = [Row; NUM_OF_KEYS];
 pub type CenterMap = [bool; NUM_OF_KEYS];
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct LayerKeys{
 	#[serde(with = "BigArray")]
     keys: KeyMap,
@@ -69,10 +69,10 @@ impl IndexMut<usize> for LayerKeys {
 }
 
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Layer(LayerKeys);
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Layout(Layer, Layer);
 
 
@@ -146,6 +146,7 @@ pub const NUM_OF_KEYS: usize = 36;
 // 		 '\0',   '\0',
 // ' ','\0','\0',   '\0', '\0', '\n']);
 
+#[rustfmt::skip]
 pub static BASE: Layout = Layout(
 	Layer(LayerKeys::new([          'e', 'r', 't',   'y', 'u', 'i', 
 	                 'd', 'f', 'g',   'h', 'j', 'k',
@@ -160,6 +161,7 @@ pub static BASE: Layout = Layout(
                               '\0',   '\0',
 					 ' ','\0','\0',   '\0','\0','\n'])));
 
+					 #[rustfmt::skip]
 pub static SWAPPABLE_MAP: SwapMap= [
 	       true,  true,  true,    true,  true,  true,  
 	       true,  true,  true,    true,  true,  true,  
@@ -169,7 +171,7 @@ pub static SWAPPABLE_MAP: SwapMap= [
 		false,  false,  false,    false,  false,  false,  
 ];
  
-
+#[rustfmt::skip]
 static KEY_FINGERS: FingerMap = [
 					Finger::Ring, Finger::Middle, Finger::Index, 	Finger::Index, Finger::Middle, Finger::Ring,
 					Finger::Ring, Finger::Middle, Finger::Index,	Finger::Index, Finger::Middle, Finger::Ring,
@@ -179,6 +181,7 @@ static KEY_FINGERS: FingerMap = [
 				   Finger::Thumb, Finger::Thumb, Finger::Thumb, 	Finger::Thumb, Finger::Thumb, Finger::Thumb
 ];
 
+#[rustfmt::skip]
 static KEY_HANDS: HandMap = [
 				Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, 
 				Hand::Left, Hand::Left, Hand::Left,    	Hand::Right, Hand::Right, Hand::Right, 
@@ -188,6 +191,7 @@ static KEY_HANDS: HandMap = [
 			 Hand::Thumb, Hand::Thumb, Hand::Thumb, 	Hand::Thumb, Hand::Thumb, Hand::Thumb
 ];
 
+#[rustfmt::skip]
 static KEY_ROWS: RowMap = [
 												  Row::Top, Row::Top, Row::Top, 			Row::Top, Row::Top, Row::Top,
 	  							Row::MiddleTop, Row::MiddleTop, Row::MiddleTop, 			Row::MiddleTop, Row::MiddleTop, Row::MiddleTop,
@@ -197,6 +201,7 @@ static KEY_ROWS: RowMap = [
 											Row::Thumb, Row::Thumb, Row::Thumb, 			Row::Thumb, Row::Thumb, Row::Thumb
 ];
 
+#[rustfmt::skip]
 static KEY_CENTER_COLUMN: CenterMap = [
 			false, false, true,    true, false, false,
 			false, false, true,    true, false, false,
@@ -208,6 +213,7 @@ static KEY_CENTER_COLUMN: CenterMap = [
 
 pub static KP_NONE: Option<KeyPress> = None;
 
+#[rustfmt::skip]
 static LAYOUT_FILE_IDXS: KeyIndexMap = [
 		 0,  1,  2,    3,  4,  5, 
 		 6,  7,  8,    9,  10, 11,
@@ -287,7 +293,7 @@ impl Layer
 	{
 		let Layer(ref layer) = *self;
 		for (i, c) in layer.keys.into_iter().enumerate() {
-			if c < (128 as char) {
+			if (0 as char) < c && c < (128 as char) {
 				map[c as usize] = Some(KeyPress {
 					kc: c,
 					pos: i,

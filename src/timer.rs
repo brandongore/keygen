@@ -147,6 +147,12 @@ pub fn get_sorted_times(display_timer: &FuncTimerDisplay) -> Vec<TimerDisplayCon
 }
 
 #[cfg(not(feature = "func_timer"))]
+pub fn get_sorted_times(display_timer: &FuncTimerDisplay) -> Vec<TimerDisplayContainer> {
+    let mut sorted_times: Vec<TimerDisplayContainer> = Vec::new();
+    return sorted_times;
+}
+
+#[cfg(not(feature = "func_timer"))]
 impl fmt::Display for FuncTimerDisplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(

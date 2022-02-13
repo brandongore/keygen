@@ -14,7 +14,7 @@ use getopts::Options;
 use penalty::QuartadList;
 use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
-use crate::file_manager::save_benchmark; 
+use crate::file_manager::{save_benchmark, read_corpus, read_layout}; 
 
 //  made thumbs their own hand, 
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
@@ -69,51 +69,23 @@ fn main()
 	let corpus_filename = match matches.free.get(0) {
 		Some(f) => f,
 		None => {
+			println!("Could not read corpus");
 			print_usage(progname, opts);
 			return;
 		},
 	};
-	let mut f = match File::open(corpus_filename) {
-		Ok(f) => f,
-		Err(e) => {
-			println!("Error: {}", e);
-			panic!("could not read corpus");
-		},
-	};
-	let mut corpus = String::new();
-	match f.read_to_string(&mut corpus) {
-		Ok(_) => (),
-		Err(e) => {
-			println!("Error: {}", e);
-			panic!("could not read corpus");
-		}
-	};
 
+	let mut corpus = read_corpus(corpus_filename);
 
 	// Read layout, if applicable.
-	let _layout;
-	let layout = match matches.free.get(1) {
-		None => &layout::BASE,
-		Some(layout_filename) => {
-			let mut f = match File::open(layout_filename) {
-				Ok(f) => f,
-				Err(e) => {
-					println!("Error: {}", e);
-					panic!("could not read layout");
-				}
-			};
-			let mut layout_str = String::new();
-			match f.read_to_string(&mut layout_str) {
-				Ok(_) => (),
-				Err(e) => {
-					println!("Error: {}", e);
-					panic!("could not read layout");
-				}
-			};
-			_layout = layout::Layout::from_string(&layout_str[..]);
-			&_layout
-		},
+	let mut layout_filename = String::new();
+	layout_filename = match matches.free.get(1) {
+		Some(f) => f.to_string(),
+		None => "".to_string(),
 	};
+
+	// Read layout, if applicable.
+	let layout = read_layout(&layout_filename);
 
 	// Parse options.
 	let debug = matches.opt_present("d");
@@ -121,7 +93,7 @@ fn main()
 	let swaps = numopt(matches.opt_str("s"), 2usize);
 
 	match command.as_ref() {
-		"run" => run(&corpus[..], layout, debug, top, swaps, ftimer),
+		"run" => run(&corpus[..], &layout, debug, top, swaps, ftimer),
 		"run-ref" => run_ref(&corpus[..], None),
 		_ => print_usage(progname, opts),
 		//"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
