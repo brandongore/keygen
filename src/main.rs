@@ -8,7 +8,7 @@ mod penalty;
 mod simulator;
 mod timer;
 
-use corpus_manager::NgramList;
+use corpus_manager::{NgramList, SwapCharList};
 use getopts::Options;
 use std::fs::File;
 use std::io::Read;
@@ -139,7 +139,8 @@ fn run(
     }
     else{
         corpus = read_corpus(&filepath.to_string());
-        ngram_list = prepare_ngram_list(&corpus, 4);
+        let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
+        ngram_list = prepare_ngram_list(&corpus.to_string(), swap_list, 4);
     }
     timer.stop(String::from("read"));
 
@@ -152,7 +153,10 @@ fn prepare(
     filepath: &String
 ) {
     let corpus= read_corpus(&filepath);
-    let ngram_list = prepare_ngram_list(&corpus, 4);
+    let swap_list: SwapCharList = SwapCharList { map:  HashMap::from([
+        
+    ])};
+    let ngram_list = prepare_ngram_list(&corpus.to_string(),swap_list, 4);
     save_ngram_list(&filepath, ngram_list);
 }
 
@@ -189,7 +193,8 @@ fn merge(
 
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize) {
     let init_pos_map = layout::BASE.get_position_map();
-    let quartads = corpus_manager::prepare_ngram_list(s, 4);
+    let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
+    let quartads = corpus_manager::prepare_ngram_list(&s.to_string(), swap_list, 4);
     let len = s.len();
 
     //simulator::refine(&quartads, len, layout, &penalties, debug, top, swaps);

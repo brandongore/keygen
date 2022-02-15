@@ -8,6 +8,10 @@ pub struct NgramList {
     pub gram: usize
 }
 
+pub struct SwapCharList {
+    pub map: HashMap<char, char>
+}
+
 impl NgramList {
     fn new() -> NgramList {
         let mut ngram_list = HashMap::new();
@@ -38,11 +42,24 @@ impl FromIterator<NgramList> for NgramList {
     }
 }
 
-pub fn prepare_ngram_list<'a>(string: &'a str, length: usize) -> NgramList {
+pub fn prepare_ngram_list(corpus: &String, swap_char_list: SwapCharList, length: usize) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
 
-    for i in 0..string.chars().count() - length {
-        let slice = &string[i..i + length];
+    let mut processed_corpus:String=String::new();
+
+    //convert windows newline to just newline for better ngrams
+    let corpus = corpus.replace("\r\n", "\n");
+
+    //swap any single character in corpus with another character if its exists in the swap list
+    for x in corpus.chars() {
+        match x { 
+            x if swap_char_list.map.contains_key(&x) => processed_corpus.push(*swap_char_list.map.get(&x).unwrap_or(&(0 as char))), 
+            x => processed_corpus.push(x)
+        }
+    }
+    
+    for i in 0..processed_corpus.chars().count() - length {
+        let slice = &processed_corpus[i..i + length];
         if slice.chars().all(|c| (c as i32) <= 128) {
             let entry = ngram_list.entry(slice.to_string()).or_insert(0);
             *entry += 1;
