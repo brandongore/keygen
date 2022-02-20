@@ -1,11 +1,13 @@
-use std::{fs::File, io::{BufWriter, Read, BufReader}};
+use std::{fs::{File, DirEntry, self}, io::{BufWriter, Read, BufReader}};
 
 use crate::{penalty, timer::{FuncTimerDisplay, get_sorted_times}, layout::{self, Layout}};
 
 use chrono::Utc;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use penalty::*;
 use std::error::Error;
+use jwalk::{WalkDir, Parallelism};
 
 #[derive(Serialize, Deserialize)]
 pub struct RunState {
@@ -83,6 +85,29 @@ pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, Box<dyn E
     let parsedValue = T::deserialize(&mut de)?;
 
     return Ok(parsedValue);
+}
+
+pub fn read_directory_files(directory: &String, dir_filetype_filter: &String) -> Vec<std::string::String>{
+    // let dir = fs::read_dir(".").expect("could not read directory");
+    // dir
+    return jwalk::WalkDir::new(directory)
+    .parallelism(Parallelism::RayonNewPool(0))
+    .into_iter()
+    .par_bridge()
+    .filter_map(|dir_entry_result| {
+        let dir_entry = dir_entry_result.ok()?;
+        if dir_entry.file_type().is_file() && dir_entry.file_name.to_string_lossy().ends_with(dir_filetype_filter) {
+            let path = dir_entry.path();
+            
+            //println!("path: {}", path.to_str().unwrap().to_string());
+            let text = std::fs::read_to_string(path).ok()?;
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+        None
+    })
+    .collect::<Vec<_>>();
 }
 
 #[cfg(all(feature = "log_benchmark"))]

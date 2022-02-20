@@ -74,7 +74,7 @@ pub fn prepare_ngram_list(
             let line = &lines[i];
             let split: Vec<&str> = line.split(split_char).collect();
 
-            for word in split{
+            for word in split {
                 if word.chars().all(|c| (c as i32) <= 128) {
                     let entry = ngram_list.entry(word.to_string()).or_insert(0);
                     *entry += 1;
@@ -156,6 +156,47 @@ pub fn parse_ngram_list(
     NgramList {
         map: ngram_list,
         gram: gram_type,
+    }
+}
+
+pub fn batch_parse_ngram_list(
+    corpora: Vec<String>,
+    split_char: &String,
+    length: usize,
+) -> NgramList {
+    let mut ngram_list: HashMap<String, usize> = HashMap::new();
+
+    //convert windows newline to just newline for better ngrams
+    let processed_corpora: Vec<String> = corpora.iter().map(|x| x.replace("\r\n", "\n")).collect();
+
+    for corpus in processed_corpora {
+        if !split_char.to_string().is_empty() {
+            let lines: Vec<String> = corpus.lines().map(|x| String::from(x)).collect();
+            for i in 0..lines.len() {
+                let line = &lines[i];
+                let split: Vec<&str> = line.split(split_char).collect();
+
+                for word in split {
+                    if word.chars().all(|c| (c as i32) <= 128) {
+                        let entry = ngram_list.entry(word.to_string()).or_insert(0);
+                        *entry += 1;
+                    }
+                }
+            }
+        } else {
+            for i in 0..corpus.chars().count() - length {
+                let slice = &corpus[i..i + length];
+                if slice.chars().all(|c| (c as i32) <= 128) {
+                    let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+                    *entry += 1;
+                }
+            }
+        }
+    }
+
+    NgramList {
+        map: ngram_list,
+        gram: 0,
     }
 }
 

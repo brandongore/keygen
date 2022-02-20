@@ -8,6 +8,9 @@ mod penalty;
 mod simulator;
 mod timer;
 
+use chrono::Utc;
+use corpus_manager::batch_parse_ngram_list;
+use file_manager::read_directory_files;
 use getopts::Options;
 use std::fs::File;
 use std::io::Read;
@@ -74,6 +77,12 @@ fn main() {
         "what ngram length to normalize list by",
         "normalize length",
     );
+    opts.optopt(
+        "f",
+        "filter",
+        "directory filetype filter",
+        "directory filter",
+    );
 
     let args: Vec<String> = env::args().collect();
     let progname = &args[0];
@@ -129,6 +138,7 @@ fn main() {
     else{
         split_char = numopt(matches.opt_str("c"), "".to_string());
     }
+    let dir_filetype_filter = numopt(matches.opt_str("f"), "".to_string());
 
     match command.as_ref() {
         "prepare" => prepare(corpus_filename, split_char),
@@ -136,6 +146,7 @@ fn main() {
         "merge" => merge(corpus_filename),
         "parse" => parse(corpus_filename, split_char),
         "normalize" => normalize(corpus_filename, normalize_length),
+        "batch" => batch(corpus_filename, &dir_filetype_filter, split_char, normalize_length),
         // "run-ref" => run_ref(ngList, None),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
@@ -215,6 +226,20 @@ fn normalize(
     let existing_ngram_list= read_ngram_list(&filepath);
     let ngram_list = normalize_ngram_list(existing_ngram_list, normalize_length);
     let normalized_filename = [filepath, "_normalized","_", normalize_length.to_string().as_str()].join("");
+    save_ngram_list(&normalized_filename, ngram_list);
+}
+
+fn batch(
+    filepath: &String,
+    dir_filetype_filter: &String,
+    split_char: String,
+    normalize_length: usize
+) {
+    let contents = read_directory_files(filepath, dir_filetype_filter);
+    let ngram_list = batch_parse_ngram_list(contents, &split_char, normalize_length);
+    let timestamp = Utc::now().to_string();
+    let timestamp = &timestamp.replace(":", "").replace(" ", "_")[0..17];
+    let normalized_filename = ["batch","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
     save_ngram_list(&normalized_filename, ngram_list);
 }
 
