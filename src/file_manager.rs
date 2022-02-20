@@ -24,7 +24,7 @@ impl RunState {
     }
 }
 
-pub fn read_corpus(corpus_filename: &String) -> String{
+pub fn read_text(corpus_filename: &String) -> String{
     let folder = String::from("\\corpus\\");
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &corpus_filename, ".txt"];
@@ -33,15 +33,15 @@ pub fn read_corpus(corpus_filename: &String) -> String{
 		Ok(f) => f,
 		Err(e) => {
 			println!("Error: {}", e);
-			panic!("could not read corpus");
+			panic!("could open file");
 		},
 	};
-	let mut corpus = String::new();
-	match f.read_to_string(&mut corpus) {
-		Ok(_) => {return corpus},
+	let mut text = String::new();
+	match f.read_to_string(&mut text) {
+		Ok(_) => {return text},
 		Err(e) => {
 			println!("Error: {}", e);
-			panic!("could not read corpus");
+			panic!("could not read text");
 		}
 	};
 }
