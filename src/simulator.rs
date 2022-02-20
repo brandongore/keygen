@@ -4,6 +4,7 @@ extern crate rand;
 extern crate rayon;
 
 use crate::annealing;
+use crate::corpus_manager;
 use crate::file_manager::save_run_state;
 use crate::layout;
 use crate::penalty;
@@ -20,7 +21,7 @@ use std::*;
 use penalty::*;
 
 pub fn simulate<'a>(
-    quartads: &penalty::QuartadList<'a>,
+    quartads: &corpus_manager::NgramList,
     init_layout: &layout::Layout,
     debug: bool,
     top_layouts: usize,
@@ -104,7 +105,7 @@ pub fn simulate<'a>(
 
 /*
     pub fn refine<'a>(
-        quartads:    &penalty::QuartadList<'a>,
+        quartads:    &penalty::NgramList<'a>,
     len:          usize,
     init_layout: &layout::Layout,
     penalties:   &Vec<penalty::KeyPenalty<'a>>,

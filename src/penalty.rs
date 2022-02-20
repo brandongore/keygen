@@ -1,4 +1,4 @@
-use crate::layout;
+use crate::{layout, corpus_manager::NgramList};
 use std;
 use std::collections::HashMap;
 use std::fmt;
@@ -138,9 +138,6 @@ impl PartialOrd for BestLayoutsEntry {
         self.penalty.total.partial_cmp(&other.penalty.total)
     }
 }
-pub struct QuartadList<'a> {
-    pub map: HashMap<&'a str, usize>,
-}
 
 impl fmt::Display for KeyPenalty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -245,20 +242,9 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
     },
 ];
 
-pub fn prepare_quartad_list<'a>(string: &'a str) -> QuartadList<'a> {
-    let mut quartads: HashMap<&str, usize> = HashMap::new();
 
-    for i in 0..string.chars().count() - 4 {
-        let slice = &string[i..i + 4];
-        if slice.chars().all(|c| (c as i32) <= 128) {
-            let entry = quartads.entry(slice).or_insert(0);
-            *entry += 1;
-        }
-    }
-    QuartadList { map: quartads }
-}
 
-pub fn calculate_penalty<'a>(quartads: &QuartadList<'a>, layout: &Layout) -> BestLayoutsEntry {
+pub fn calculate_penalty<'a>(quartads: &NgramList, layout: &Layout) -> BestLayoutsEntry {
     let mut result = Penalty::new();
     let position_map = layout.get_position_map();
 
