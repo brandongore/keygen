@@ -7,9 +7,11 @@ mod layout;
 mod penalty;
 mod simulator;
 mod timer;
+mod evaluator;
 
 use chrono::Utc;
 use corpus_manager::batch_parse_ngram_list;
+use evaluator::evaluate;
 use file_manager::read_directory_files;
 use getopts::Options;
 use std::fs::File;
@@ -147,6 +149,7 @@ fn main() {
         "parse" => parse(corpus_filename, split_char),
         "normalize" => normalize(corpus_filename, normalize_length),
         "batch" => batch(corpus_filename, &dir_filetype_filter, split_char, normalize_length),
+        "default" => create_default(corpus_filename),
         // "run-ref" => run_ref(ngList, None),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
@@ -241,6 +244,13 @@ fn batch(
     let timestamp = &timestamp.replace(":", "").replace(" ", "_")[0..17];
     let normalized_filename = ["batch","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
     save_ngram_list(&normalized_filename, ngram_list);
+}
+
+fn create_default(
+    filepath: &String
+) {
+    let ngram_list= read_ngram_list(&filepath);
+    evaluate(ngram_list);
 }
 
 // fn run_ref(corpus: NgramList,quartads:Option<&NgramList>)

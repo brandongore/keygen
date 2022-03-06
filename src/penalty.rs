@@ -146,7 +146,7 @@ impl fmt::Display for KeyPenalty {
 }
 
 #[rustfmt::skip]
-static BASE_PENALTY: PenaltyMap = [
+pub static BASE_PENALTY: PenaltyMap = [
         8.0, 8.0, 10.0,     10.0, 8.0, 8.0,
          1.0, 0.5, 2.0,     2.0, 0.5, 1.0,
     8.0, 0.5, 0.5, 1.5,     1.5, 0.5, 0.5, 8.0,
