@@ -148,13 +148,15 @@ pub const NUM_OF_KEYS: usize = 36;
 
 #[rustfmt::skip]
 pub static BASE: Layout = Layout(
-	Layer(LayerKeys::new([          'e', 'r', 't',   'y', 'u', 'i', 
+	Layer(LayerKeys::new([          
+					 'e', 'r', 't',   'y', 'u', 'i', 
 	                 'd', 'f', 'g',   'h', 'j', 'k',
 		        'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
 				'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
 							  '\0',   '\0',
 				     ' ','\0','\0',   '\0', '\0', '\n'])),
-	Layer(LayerKeys::new([          'E', 'R', 'T',   'Y', 'U', 'I',
+	Layer(LayerKeys::new([          
+					 'E', 'R', 'T',   'Y', 'U', 'I',
 		             'D', 'F', 'G',   'H', 'J', 'K',
 		        'Q', 'W', 'X', 'C',   'N', 'M', 'O', 'P',
 		        'A', 'S', 'Z', 'V',   'B', '<', '>', 'L',
@@ -173,8 +175,8 @@ pub static SWAPPABLE_MAP: SwapMap= [
  
 #[rustfmt::skip]
 static KEY_FINGERS: FingerMap = [
-					Finger::Ring, Finger::Middle, Finger::Index, 	Finger::Index, Finger::Middle, Finger::Ring,
-					Finger::Ring, Finger::Middle, Finger::Index,	Finger::Index, Finger::Middle, Finger::Ring,
+				   Finger::Ring, Finger::Middle, Finger::Index, 	Finger::Index, Finger::Middle, Finger::Ring,
+				   Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring,
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
 												 Finger::Thumb, 	Finger::Thumb,

@@ -1,7 +1,7 @@
 use crate::{corpus_manager::NgramList, file_manager::*, layout, penalty::BASE_PENALTY};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, hash::Hash, ops::Index};
+use std::{collections::HashMap, hash::Hash, ops::Index, cmp::Ordering};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct KeyPositionPenalty {
@@ -21,8 +21,61 @@ pub struct PositionPenalty {
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct PenaltyFrequency {
     penalty: f64,
+    frequency: f64,
+    penalty_normalized: f64,
+    frequency_normalized: f64
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct keyPenaltyFrequency {
+    key: u8,
+    penalty: f64,
     frequency: f64
 }
+
+impl Ord for keyPenaltyFrequency {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.partial_cmp(&other) {
+            Some(ord) => ord,
+            None => std::cmp::Ordering::Equal,
+        }
+    }
+}
+impl PartialEq for keyPenaltyFrequency {
+    fn eq(&self, other: &Self) -> bool {
+        self.penalty == other.penalty
+    }
+}
+impl Eq for keyPenaltyFrequency {}
+impl PartialOrd for keyPenaltyFrequency {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.frequency.partial_cmp(&other.frequency)
+        //chain_ordering(self.frequency.partial_cmp(&other.frequency),self.penalty.partial_cmp(&other.penalty))   
+    }
+}
+
+fn chain_ordering(o1: Option<std::cmp::Ordering>, o2: Option<std::cmp::Ordering>) -> Option<std::cmp::Ordering> {
+    match o1{
+        Some(ord) => {
+            match ord {
+                Ordering::Equal => {
+                    match o2 {
+                        Some(ord2) => {
+                            match ord2 {
+                                Ordering::Equal => Some(std::cmp::Ordering::Equal),
+                                _ => Some(ord2.reverse()),
+                            }
+                        },
+                        None => Some(std::cmp::Ordering::Equal),
+                    }
+                },
+                _ => Some(ord),
+            }
+        },
+        None => Some(std::cmp::Ordering::Equal),
+    }
+}
+
 
 pub struct PositionPenaltyList {
     pub map: HashMap<u32, PenaltyFrequency>,
@@ -137,6 +190,8 @@ pub fn evaluate(ngram_list: NgramList) {
                             let penalty_frequency = PenaltyFrequency {
                                 penalty: item.penalty,
                                 frequency: item.frequency,
+                                penalty_normalized: 0.0,
+                                frequency_normalized: 0.0
                             };
                             penalty_frequency
                         });
@@ -147,6 +202,8 @@ pub fn evaluate(ngram_list: NgramList) {
                     let penalty_frequency = PenaltyFrequency {
                         penalty: item.penalty,
                         frequency: item.frequency,
+                        penalty_normalized: 0.0,
+                        frequency_normalized: 0.0
                     };
                     newVec.map.insert(item.position, penalty_frequency);
                     newVec
@@ -178,12 +235,80 @@ pub fn evaluate(ngram_list: NgramList) {
 
             let mut penalty_frequency = *item.1;
             //normalize penalty values for current character
-            penalty_frequency.penalty = (penalty_frequency.penalty - min_max_position_penalty.min_penalty) / min_max_position_penalty.range;
+            penalty_frequency.penalty_normalized = (penalty_frequency.penalty - min_max_position_penalty.min_penalty) / min_max_position_penalty.range;
 
             //normalize frequency values across all characters
-            penalty_frequency.frequency = (penalty_frequency.frequency - min_max_frequency.min_frequency) / min_max_frequency.range;
+            penalty_frequency.frequency_normalized = (penalty_frequency.frequency - min_max_frequency.min_frequency) / min_max_frequency.range;
 
             *item.1 = penalty_frequency;
         }
+    }
+
+    let mut key_penalty_frequency_map: HashMap<u32, Vec<keyPenaltyFrequency>> = HashMap::new();
+    for (key, val) in &mut key_position_list {
+        for item in &mut val.map {
+            key_penalty_frequency_map
+            .entry(*item.0)
+            .and_modify(|key_penalty_frequency_list| {
+                let key_penalty_frequency = keyPenaltyFrequency { key: *key, penalty:item.1.penalty_normalized, frequency:item.1.frequency_normalized };
+                key_penalty_frequency_list.push(key_penalty_frequency);
+                key_penalty_frequency_list.sort_by(|a,b| a.cmp(b).reverse() );
+            })
+            .or_insert_with(|| {
+                let mut key_penalty_frequency_list: Vec<keyPenaltyFrequency> = Vec::new();
+                let key_penalty_frequency = keyPenaltyFrequency { key: *key, penalty:item.1.penalty_normalized, frequency:item.1.frequency_normalized };
+                key_penalty_frequency_list.push(key_penalty_frequency);
+                key_penalty_frequency_list
+            });
+        }
+    }
+
+    pub struct PositionPenalty {
+        position: u32,
+        penalty: f64,
+    }
+    let mut position_penalty_list: Vec<PositionPenalty> = Vec::new();
+    for (index,penalty) in BASE_PENALTY.into_iter().enumerate() {
+        position_penalty_list.push(PositionPenalty{position: index as u32, penalty: penalty })
+    }
+    position_penalty_list.sort_by(|a,b|a.penalty.partial_cmp(&b.penalty).unwrap());
+
+    let position_penalty_groups = &position_penalty_list
+    .into_iter()
+    .group_by(|elt| elt.penalty);
+
+    pub struct KeyPosition {
+        position: u32,
+        key: u32
+    }
+
+    pub struct KeyPositionList {
+        positions: Vec<KeyPosition>
+    }
+
+    pub struct PositionGroup {
+        positions: Vec<u32>,
+        count: usize,
+        index: u32
+    }
+
+    let mut position_penalty_group_list: Vec<PositionGroup> = Vec::new();
+    let mut groupIndex = 0;
+    for (key, group) in position_penalty_groups {
+        let group_list = &group.collect_vec();
+        let group_positions = group_list.into_iter().map(|g|g.position).collect();
+        let group_count = group_list.len();
+        let position_group = PositionGroup {
+            positions : group_positions,
+            count : group_count,
+            index : groupIndex
+        };
+        position_penalty_group_list.push(position_group);
+        groupIndex = groupIndex + 1;
+    }
+
+    let mut position_penalty_group_list: Vec<KeyPositionList> = Vec::new();
+    for (item) in position_penalty_group_list{
+        
     }
 }
