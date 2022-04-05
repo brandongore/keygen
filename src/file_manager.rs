@@ -67,6 +67,13 @@ pub fn read_layout(layout_filename: &String) -> Layout{
     return layout::Layout::from_string(&layout_str[..]);
 }
 
+pub fn save_small_file<T>(filename: String, folder: String, data: &T) where T: Serialize {
+    let folder = folder.replace("/", "\\");
+    let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
+    let writer = BufWriter::new(File::create(path.join("")).unwrap());
+    serde_json::to_writer(writer, &data).unwrap();
+}
+
 pub fn save_file<T>(filename: String, folder: String, data: &T) where T: Serialize {
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
@@ -74,7 +81,7 @@ pub fn save_file<T>(filename: String, folder: String, data: &T) where T: Seriali
     serde_json::to_writer_pretty(writer, &data).unwrap();
 }
 
-pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, Box<dyn Error>> where T: Deserialize<'a> {
+pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, serde_json::Error> where T: Deserialize<'a> {
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
     
@@ -82,9 +89,20 @@ pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, Box<dyn E
     let mut reader = BufReader::new(file);
 
     let mut de = serde_json::Deserializer::from_reader(reader);
-    let parsedValue = T::deserialize(&mut de)?;
+    let parsedValue = T::deserialize(&mut de);
 
-    return Ok(parsedValue);
+    // let parsedValue = match T::deserialize(&mut de) {
+    //     Ok(parsedValue) => {
+    //         return parsedValue;
+    //         //println!("id = {:?}", parsedValue.unique_id);
+    //     },
+    //     Err(msg) => {
+    //         println!("{:?}", msg);
+    //         // handle error here
+    //     }
+    // };
+
+    return parsedValue;
 }
 
 pub fn read_directory_files(directory: &String, dir_filetype_filter: &String) -> Vec<std::string::String>{

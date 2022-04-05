@@ -10,7 +10,7 @@ mod timer;
 mod evaluator;
 
 use chrono::Utc;
-use corpus_manager::batch_parse_ngram_list;
+use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list};
 use evaluator::evaluate;
 use file_manager::read_directory_files;
 use getopts::Options;
@@ -150,6 +150,7 @@ fn main() {
         "normalize" => normalize(corpus_filename, normalize_length),
         "batch" => batch(corpus_filename, &dir_filetype_filter, split_char, normalize_length),
         "default" => create_default(corpus_filename),
+        "generate" => generate(corpus_filename, normalize_length),
         // "run-ref" => run_ref(ngList, None),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
@@ -251,6 +252,16 @@ fn create_default(
 ) {
     let ngram_list= read_ngram_list(&filepath);
     evaluate(ngram_list);
+}
+
+fn generate(
+    filepath: &String,
+    normalize_length: usize
+) {
+    let corpus= read_json_array_list(&filepath);
+    let ngram_list = generate_ngram_list(corpus, normalize_length);
+    let processed_filename = [filepath, "_normalized","_", normalize_length.to_string().as_str()].join("");
+    save_ngram_list(&processed_filename, ngram_list);
 }
 
 // fn run_ref(corpus: NgramList,quartads:Option<&NgramList>)

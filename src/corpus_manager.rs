@@ -1,7 +1,14 @@
 use crate::file_manager::*;
+use chrono::{DateTime, Utc};
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::{
+    de::{MapAccess, SeqAccess},
+    Deserialize, Serialize,
+};
+use std::{collections::HashMap, fmt};
+
+use serde::de::{Deserializer, Error, Visitor};
+use serde_json::{Map, Value};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NgramList {
@@ -97,6 +104,27 @@ pub fn prepare_ngram_list(
     }
 }
 
+pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
+    let mut ngram_list: HashMap<String, usize> = HashMap::new();
+
+    for item in corpus {
+        if item.chars().all(|c| (c as i32) <= 128) {
+            for i in 0..item.chars().count() - length {
+                let slice = &item.to_lowercase()[i..i + length];
+                if slice.chars().all(|c|  ((c as i32) >= 65 && (c as i32) <= 90) || ((c as i32) >= 97 && (c as i32) <= 122)) {
+                    let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+                    *entry += 1;
+                }
+            }
+        }
+    }
+
+    NgramList {
+        map: ngram_list,
+        gram: length,
+    }
+}
+
 pub fn save_ngram_list(filename: &String, ngram_list: NgramList) {
     let folder = String::from("\\processed\\");
     save_file::<NgramList>(String::from(filename), String::from(folder), &ngram_list);
@@ -105,6 +133,11 @@ pub fn save_ngram_list(filename: &String, ngram_list: NgramList) {
 pub fn read_ngram_list(filepath: &String) -> NgramList {
     return read_json::<NgramList>(filepath.to_string(), String::from("\\processed\\"))
         .unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_json_array_list(filepath: &String) -> Vec<String> {
+    return read_json::<Vec<String>>(filepath.to_string(), String::from("\\processed\\"))
+        .unwrap_or_else(|_| panic!("Could not read list"));
 }
 
 pub fn merge_ngram_lists(filepaths: Vec<String>) -> NgramList {

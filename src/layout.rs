@@ -82,7 +82,7 @@ pub struct LayoutPosMap([Option<KeyPress>; 128]);
 #[derive(Clone)]
 pub struct LayoutShuffleMask(MaskMap);
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug,Clone, Copy, PartialEq)]
 pub enum Finger 
 {
 	Thumb,
@@ -100,7 +100,7 @@ pub enum Hand
 	Thumb
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug,Clone, Copy, PartialEq)]
 pub enum Row
 {
 	Top,
@@ -174,7 +174,7 @@ pub static SWAPPABLE_MAP: SwapMap= [
 ];
  
 #[rustfmt::skip]
-static KEY_FINGERS: FingerMap = [
+pub static KEY_FINGERS: FingerMap = [
 				   Finger::Ring, Finger::Middle, Finger::Index, 	Finger::Index, Finger::Middle, Finger::Ring,
 				   Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring,
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
@@ -184,7 +184,7 @@ static KEY_FINGERS: FingerMap = [
 ];
 
 #[rustfmt::skip]
-static KEY_HANDS: HandMap = [
+pub static KEY_HANDS: HandMap = [
 				Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, 
 				Hand::Left, Hand::Left, Hand::Left,    	Hand::Right, Hand::Right, Hand::Right, 
 	Hand::Left, Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, Hand::Right, 
@@ -194,7 +194,7 @@ static KEY_HANDS: HandMap = [
 ];
 
 #[rustfmt::skip]
-static KEY_ROWS: RowMap = [
+pub static KEY_ROWS: RowMap = [
 												  Row::Top, Row::Top, Row::Top, 			Row::Top, Row::Top, Row::Top,
 	  							Row::MiddleTop, Row::MiddleTop, Row::MiddleTop, 			Row::MiddleTop, Row::MiddleTop, Row::MiddleTop,
 	Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, 			Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom, Row::MiddleBottom,  
