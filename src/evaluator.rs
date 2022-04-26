@@ -1,11 +1,11 @@
 use crate::{
     corpus_manager::NgramList,
     file_manager::*,
-    layout::{self, Finger, KeyMap, LayerKeys, Row, KEY_FINGERS, KEY_ROWS, NUM_OF_KEYS},
-    penalty::BASE_PENALTY,
+    layout::{self, Finger, KeyMap, LayerKeys, Row, KEY_FINGERS, KEY_ROWS, NUM_OF_KEYS, Layout},
+    penalty::{BASE_PENALTY, BestLayoutsEntry, self, Penalty},
 };
 use itertools::Itertools;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::{iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator, IndexedParallelIterator}, slice::{ParallelSliceMut, ParallelSlice}};
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::HashMap, hash::Hash, ops::Index, slice::Iter};
 
@@ -116,9 +116,10 @@ pub fn evaluate(ngram_list: NgramList) {
     let thumb_indeces: Vec<usize> = KEY_FINGERS
         .into_iter()
         .enumerate()
-        .filter(|f| f.1 == Finger::Thumb)
+        .filter(|f| f.1 == Finger::Thumb || f.1 == Finger::ThumbBottom)
         .map(|f| f.0)
         .collect();
+        
     let mut bad_finger_indeces: Vec<usize> = Vec::new();
 
     for (finger_index, finger) in KEY_FINGERS.into_iter().enumerate() {
@@ -280,8 +281,11 @@ pub fn evaluate(ngram_list: NgramList) {
     key_position_group_list.sort_by(|a, b| a.len().cmp(&b.len()));
 
     let biggest_group = key_position_group_list.pop().unwrap();
-    let mut singlebig: Vec<Vec<KeyPosition>> = Vec::new();
-    singlebig.push(biggest_group.get(0).unwrap().to_vec());
+    // let mut singlebig: Vec<Vec<KeyPosition>> = Vec::new();
+    // singlebig.push(biggest_group.get(0).unwrap().to_vec());
+    // singlebig.push(biggest_group.get(1).unwrap().to_vec());
+    // singlebig.push(biggest_group.get(2).unwrap().to_vec());
+    // singlebig.push(biggest_group.get(3).unwrap().to_vec());
     // let final_combinations : Vec<Vec<Vec<KeyPosition>>> = biggest_group.into_par_iter().map(move|g|{
     //     let filename = g.clone().iter().map(|kp|kp.key as char).join("_");
     //     let folder = String::from("\\evaluation\\");
@@ -303,7 +307,14 @@ pub fn evaluate(ngram_list: NgramList) {
     //     single_key_position_group_combinations
     // }).flat_map(|m|m).collect();
 
-    let final_combinations = singlebig.into_par_iter().map(move|g|{
+    let thumb_bottom_indeces: Vec<usize> = KEY_FINGERS
+    .into_iter()
+    .enumerate()
+    .filter(|f| f.1 == Finger::ThumbBottom)
+    .map(|f| f.0)
+    .collect();
+
+    let final_combinations = biggest_group.into_par_iter().map(move|g|{
         let filename = g.clone().iter().map(|kp|kp.key as char).join("_");
         let folder = String::from("\\evaluation\\");
 
@@ -313,10 +324,15 @@ pub fn evaluate(ngram_list: NgramList) {
         let mut key_position_group_list_copy = key_position_group_list.clone();
         key_position_group_list_copy.push(single_item);
 
-        //let mut single_key_position_group_combinations: Vec<LayerKeys> = Vec::new();
+        let mut single_key_position_group_combinations: Vec<LayerKeys> = Vec::new();
         let mut single_key_position_group_combinations: Vec<String> = Vec::new();
         for combination in key_position_group_list_copy.into_iter().map(IntoIterator::into_iter).multi_cartesian_product() {
             let mut single_layout: KeyMap = [(); NUM_OF_KEYS].map(|_| ' ');
+
+            single_layout[31] = 'e';
+            single_layout[34] = 't';
+            single_layout[35] = '\n';
+
             for kp in combination.iter().flatten(){
                 single_layout[kp.position as usize] = kp.key as char;
             };
@@ -361,4 +377,36 @@ pub fn evaluate(ngram_list: NgramList) {
     // for combination in key_position_group_combinations.into_iter() {
     //     key_position_group_combinations_flattened.push(combination.into_iter().map(|group| group).flatten().collect::<Vec<KeyPosition>>());
     // }
+}
+
+pub fn evaluate_layouts(layouts: Vec<FileResult<Vec<String>>>) -> Vec<FileResult<Vec<BestLayoutsEntry>>>{
+    let mut best_layout_results: Vec<FileResult<Vec<BestLayoutsEntry>>> = Vec::new();
+
+    for file_result in layouts.iter() {
+         let mut chunked_results: Vec<FileResult<Vec<BestLayoutsEntry>>> = file_result.data.par_chunks(50000).enumerate().map(|(i, slice)|{
+            let mut best_layouts: Vec<BestLayoutsEntry> = Vec::new();
+            
+            for layout_string in slice.iter() {
+                let layout = Layout::from_lower_string(&layout_string[..]);
+                let penalty = Penalty { penalties: Vec::new(), fingers: [(); 10].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
+                let best_layout = BestLayoutsEntry { layout, penalty};
+                best_layouts.push(best_layout);
+            }
+            let chunked_filename = [file_result.filename.clone(),String::from("_"), i.to_string()].join("");
+            let best_layouts_result = FileResult {data: best_layouts, filename: chunked_filename};
+            best_layouts_result
+            //best_layout_results.push(best_layouts_result);
+        }).collect();
+        best_layout_results.append(&mut chunked_results);
+        // for layout_string in file_result.data.iter() {
+        //     let layout = Layout::from_lower_string(&layout_string[..]);
+        //     let penalty = Penalty { penalties: Vec::new(), fingers: [(); 8].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
+        //     let best_layout = BestLayoutsEntry { layout, penalty};
+        //     best_layouts.push(best_layout);
+        // }
+        // let best_layouts_result = FileResult {data: best_layouts, filename: file_result.filename.clone()};
+        // best_layout_results.push(best_layouts_result);
+    }
+
+    return best_layout_results;
 }

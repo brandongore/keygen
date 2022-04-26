@@ -1,4 +1,4 @@
-use crate::{layout, corpus_manager::NgramList};
+use crate::{corpus_manager::NgramList, layout};
 use std;
 use std::collections::HashMap;
 use std::fmt;
@@ -81,14 +81,14 @@ pub struct KeyPenaltyDescription {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KeyPenalty {
     pub name: String,
-    pub times: f64,
+    pub times: usize,
     pub total: f64,
     pub show: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Penalty {
     pub penalties: Vec<KeyPenalty>,
-    pub fingers: [usize; 8],
+    pub fingers: [usize; 10],
     pub hands: [usize; 2],
     pub total: f64,
     pub len: usize,
@@ -101,12 +101,12 @@ impl Penalty {
                 name: desc.name.to_string(),
                 show: desc.show,
                 total: 0.0,
-                times: 0.0,
+                times: 0,
             });
         }
         Penalty {
             penalties: penalties,
-            fingers: [0; 8],
+            fingers: [0; 10],
             hands: [0; 2],
             total: 0.0,
             len: 0,
@@ -148,11 +148,11 @@ impl fmt::Display for KeyPenalty {
 #[rustfmt::skip]
 pub static BASE_PENALTY: PenaltyMap = [
         8.0, 8.0, 10.0,     10.0, 8.0, 8.0,
-         1.0, 0.5, 2.0,     2.0, 0.5, 1.0,
+         1.0, 1.0, 2.5,     2.5, 1.0, 1.0,
     6.0, 0.5, 0.5, 1.5,     1.5, 0.5, 0.5, 6.0,
     6.0, 2.0, 2.0, 2.5,     2.5, 2.0, 2.0, 6.0,
                    5.0,     5.0,
-         5.0, 5.0, 5.0,     5.0, 5.0, 5.0,
+         4.0, 4.0, 5.0,     5.0, 4.0, 4.0,
 ];
 
 static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
@@ -242,8 +242,6 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 15] = [
     },
 ];
 
-
-
 pub fn calculate_penalty<'a>(quartads: &NgramList, layout: &Layout) -> BestLayoutsEntry {
     let mut result = Penalty::new();
     let position_map = layout.get_position_map();
@@ -251,250 +249,674 @@ pub fn calculate_penalty<'a>(quartads: &NgramList, layout: &Layout) -> BestLayou
     for (string, count) in &quartads.map {
         let mut chars = string.chars().into_iter();
 
-        let old3 = chars
-            .next()
-            .map(|c| position_map.get_key_position(c))
-            .unwrap_or(&KP_NONE);
+        let mut trigrams: Vec<Vec<char>> = Vec::new();
 
-        let old2 = chars
-            .next()
-            .map(|c| position_map.get_key_position(c))
-            .unwrap_or(&KP_NONE);
-
-        let old1 = chars
-            .next()
-            .map(|c| position_map.get_key_position(c))
-            .unwrap_or(&KP_NONE);
-
-        let curr = match chars.next() {
-            Some(c) => match position_map.get_key_position(c) {
-                &Some(ref kp) => kp,
-                &None => continue,
-            },
-            None => panic!("unreachable"),
-        };
-        result.len += count;
-
-        let useFinger = |result: &mut Penalty, i: usize| match curr.finger {
-            Finger::Pinky => result.fingers[i] += count,
-            Finger::Ring => result.fingers[i + 1] += count,
-            Finger::Middle => result.fingers[i + 2] += count,
-            Finger::Index => result.fingers[i + 3] += count,
-            Finger::Thumb => {}
-        };
-        match curr.hand {
-            Hand::Left => {
-                result.hands[0] += count;
-                useFinger(&mut result, 0);
-            }
-            Hand::Right => {
-                result.hands[1] += count;
-                useFinger(&mut result, 4);
-            }
-            _ => {}
-        }
-        let mut log = |i: usize, penalty: f64| {
-            let p = penalty * *count as f64;
-            //println!("{}; {}", i, penalty);
-            result.penalties[i].times += *count as f64;
-            result.penalties[i].total += p;
-            result.total += p;
-        };
-
-        let count = *count as f64;
-        // 0: Base penalty.
-        log(0, BASE_PENALTY[curr.pos] / 5.0);
-
-        let old1 = match *old1 {
-            Some(ref o) => o,
-            None => continue,
-        };
-
-        if curr.hand == old1.hand && curr.hand != Hand::Thumb {
-            // 1: Same finger.
-            if curr.finger == old1.finger && curr.pos != old1.pos {
-                let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
-                log(1, penalty);
-            }
-
-            // 2: Long jump hand.
-            if curr.row == Row::Top && old1.row == Row::Bottom
-                || curr.row == Row::Bottom && old1.row == Row::Top
-            {
-                log(2, 5.0);
-            }
-
-            // 3: Long jump.
-            if curr.finger == old1.finger {
-                if curr.row == Row::Top && old1.row == Row::Bottom
-                    || curr.row == Row::Bottom && old1.row == Row::Top
-                {
-                    log(3, 20.0);
+        if string.len() > 3 {
+            for i in 0..string.chars().count() - 3 {
+                let slice = &string[i..i + 3];
+                if slice.chars().all(|c| (c as i32) <= 128) {
+                    let letters: Vec<char> = slice.chars().collect();
+                    trigrams.push(letters);
                 }
             }
-
-            // 4: Long jump consecutive.
-            if curr.row == Row::Top && old1.row == Row::Bottom
-                || curr.row == Row::Bottom && old1.row == Row::Top
-            {
-                if curr.finger == Finger::Ring && old1.finger == Finger::Pinky
-                    || curr.finger == Finger::Pinky && old1.finger == Finger::Ring
-                    || curr.finger == Finger::Middle && old1.finger == Finger::Ring
-                    || curr.finger == Finger::Ring && old1.finger == Finger::Middle
-                    || (curr.finger == Finger::Index
-                        && (old1.finger == Finger::Middle || old1.finger == Finger::Ring)
-                        && curr.row == Row::Top
-                        && old1.row == Row::Bottom)
-                {
-                    log(4, 5.0);
-                }
-            }
-
-            // 5: Pinky/ring twist.
-            if (curr.finger == Finger::Ring
-                && old1.finger == Finger::Pinky
-                && (curr.row == Row::MiddleBottom && old1.row == Row::Bottom))
-                || (curr.finger == Finger::Pinky
-                    && old1.finger == Finger::Ring
-                    && (curr.row == Row::MiddleBottom && old1.row == Row::Top
-                        || curr.row == Row::MiddleBottom && old1.row == Row::MiddleTop
-                        || curr.row == Row::Bottom && old1.row == Row::Top
-                        || curr.row == Row::Bottom && old1.row == Row::MiddleTop
-                        || curr.row == Row::Bottom && old1.row == Row::MiddleBottom))
-            {
-                log(5, 10.0);
-            }
-
-            // 9: Roll out.
-            if is_roll_out(curr.finger, old1.finger) {
-                log(9, 1.0);
-                if curr.row == Row::Top && old1.row == Row::Bottom
-                    || curr.row == Row::Bottom && old1.row == Row::Top
-                {
-                    log(7, 10.5);
-                }
-            }
-
-            // 10: Roll in.
-            if is_roll_in(curr.finger, old1.finger) {
-                if old1.row != Row::Bottom
-                    && !(curr.row == Row::Top && old1.row == Row::Bottom
-                        || curr.row == Row::Bottom && old1.row == Row::Top)
-                {
-                    log(10, -0.5);
-                } else {
-                }
-
-                if is_roll_in2(curr.finger, old1.finger) {
-                    //result[10].times+=count;
-                }
-                if is_roll_out2(curr.finger, old1.finger) {
-                    //result[9].times+=count;
-                }
-            }
-        }
-        let old2 = match *old2 {
-            Some(ref o) => o,
-            None => continue,
-        };
-        // Three key penalties.
-        let old3 = match *old3 {
-            Some(ref o) => o,
-            None => continue,
-        };
-
-        if curr.hand == old1.hand && old1.hand == old2.hand && old2.hand == old3.hand {
-            // 13: 4 no alternation
-            log(13, 1.2);
-        } else if curr.hand != old1.hand
-            && old1.hand != old2.hand
-            && old2.hand != old3.hand
-            && curr.hand != Hand::Thumb
-            && old1.hand != Hand::Thumb
-            && old2.hand != Hand::Thumb
-            && old3.hand != Hand::Thumb
-        {
-            // 14: 4 alternations in a row.
-            log(14, 0.01);
-        }
-        //8: Alternation
-        if curr.hand != old1.hand {
-            log(8, -0.1);
+        } else {
+            let letters: Vec<char> = string.chars().collect();
+            trigrams.push(letters);
         }
 
-        if curr.hand == old1.hand && old1.hand == old2.hand {
-            // 6: Roll reversal.
-            if (curr.finger == Finger::Middle
-                && old1.finger == Finger::Pinky
-                && old2.finger == Finger::Ring)
-                || curr.finger == Finger::Ring
-                    && old1.finger == Finger::Pinky
-                    && old2.finger == Finger::Middle
-            {
-                log(6, 10.0);
-            }
+        for trigram in trigrams {
+            let old2 = match *position_map.get_key_position(trigram[0]) {
+                Some(ref o) => o,
+                None => continue,
+            };
 
-            // 12: Twist.
-            if ((curr.row == Row::Top && old1.row == Row::MiddleTop && old2.row == Row::Bottom)
-                || (curr.row == Row::Bottom && old1.row == Row::MiddleTop && old2.row == Row::Top))
-                && ((is_roll_out(curr.finger, old1.finger)
-                    && is_roll_out(old1.finger, old2.finger))
-                    || (is_roll_in(curr.finger, old1.finger)
-                        && is_roll_in(old1.finger, old2.finger)))
-            {
-                log(12, 5.0);
-            }
-        }
+            let old1 = match *position_map.get_key_position(trigram[1]) {
+                Some(ref o) => o,
+                None => continue,
+            };
 
-        // 11: Long jump sandwich.
-        if curr.hand == old2.hand && curr.finger == old2.finger {
-            if curr.row == Row::Top && old2.row == Row::Bottom
-                || curr.row == Row::Bottom && old2.row == Row::Top
-            {
-                log(11, 3.0);
-            }
-        }
+            let curr = match *position_map.get_key_position(trigram[2]) {
+                Some(ref o) => o,
+                None => continue,
+            };
 
-        fn is_roll_out(curr: Finger, prev: Finger) -> bool {
-            match curr {
-                Finger::Middle => prev == Finger::Index,
-                Finger::Ring => {
-                    prev != Finger::Pinky && prev != Finger::Ring && prev != Finger::Thumb
-                }
-                Finger::Pinky => prev != Finger::Pinky && prev != Finger::Thumb,
-                _ => false,
-            }
-        }
-        // my restricted roll-in, as not all inward rolls feel good
-        fn is_roll_in(curr: Finger, prev: Finger) -> bool {
-            match curr {
-                Finger::Index => prev != Finger::Thumb && prev != Finger::Index,
-                Finger::Middle => prev == Finger::Pinky || prev == Finger::Ring,
-                _ => false,
-            }
-        }
-        fn is_roll_out2(curr: Finger, prev: Finger) -> bool {
-            match curr {
-                Finger::Thumb => false,
-                Finger::Index => prev == Finger::Thumb,
-                Finger::Middle => prev == Finger::Thumb || prev == Finger::Index,
-                Finger::Ring => prev != Finger::Pinky && prev != Finger::Ring,
-                Finger::Pinky => prev != Finger::Pinky,
-            }
-        }
-        // all roll-ins
-        fn is_roll_in2(curr: Finger, prev: Finger) -> bool {
-            match curr {
-                Finger::Thumb => prev != Finger::Thumb,
-                Finger::Index => prev != Finger::Thumb && prev != Finger::Index,
-                Finger::Middle => prev == Finger::Pinky || prev == Finger::Ring,
-                Finger::Ring => prev == Finger::Pinky,
-                Finger::Pinky => false,
-            }
+            // let mut key_presses = Vec::new();
+            // for c in chars.clone() {
+            //     match position_map.get_key_position(c) {
+            //         &Some(ref kp) => key_presses.push(kp),
+            //         _ => (),
+            //     }
+            // }
+
+            // let old3 = chars
+            //     .next()
+            //     .map(|c| position_map.get_key_position(c))
+            //     .unwrap_or(&KP_NONE);
+
+            // let old2 = chars
+            //     .next()
+            //     .map(|c| position_map.get_key_position(c))
+            //     .unwrap_or(&KP_NONE);
+
+            // let old1 = chars
+            //     .next()
+            //     .map(|c| position_map.get_key_position(c))
+            //     .unwrap_or(&KP_NONE);
+
+            // let curr = match chars.next() {
+            //     Some(c) => match position_map.get_key_position(c) {
+            //         &Some(ref kp) => kp,
+            //         &None => continue,
+            //     },
+            //     None => panic!("unreachable"),
+            // };
+            result.len += count;
+
+            // let useFinger = |result: &mut Penalty, i: usize| match curr.finger {
+            //     Finger::Pinky => result.fingers[i] += count,
+            //     Finger::Ring => result.fingers[i + 1] += count,
+            //     Finger::Middle => result.fingers[i + 2] += count,
+            //     Finger::Index => result.fingers[i + 3] += count,
+            //     Finger::Thumb => result.fingers[i + 4] += count,
+            //     Finger::ThumbBottom => result.fingers[i + 4] += count,
+            // };
+
+            update_hand(old2, count, &mut result);
+            update_hand(old1, count, &mut result);
+            update_hand(curr, count, &mut result);
+            // match curr.hand {
+            //     Hand::Left => {
+            //         result.hands[0] += count;
+            //         useFinger(&mut result, 0);
+            //     }
+            //     Hand::Right => {
+            //         result.hands[1] += count;
+            //         useFinger(&mut result, 5);
+            //     }
+            //     _ => {}
+            // }
+            // let mut log = |i: usize, penalty: f64| {
+            //     let p = penalty * *count as f64;
+            //     //println!("{}; {}", i, penalty);
+            //     result.penalties[i].times += *count as f64;
+            //     result.penalties[i].total += p;
+            //     result.total += p;
+            // };
+
+            //let count = *count as f64;
+
+            // 0: Base penalty.
+            log_penalty(0, BASE_PENALTY[curr.pos] / 5.0, count, &mut result);
+            // log(0, BASE_PENALTY[curr.pos] / 5.0);
+
+            // let old1 = match *old1 {
+            //     Some(ref o) => o,
+            //     None => continue,
+            // };
+
+            evaluate_same_hand_penalties(old2, old1, count, &mut result);
+            evaluate_same_hand_penalties(old1, curr, count, &mut result);
+
+            // let old2 = match *old2 {
+            //     Some(ref o) => o,
+            //     None => continue,
+            // };
+            // // Three key penalties.
+            // let old3 = match *old3 {
+            //     Some(ref o) => o,
+            //     None => continue,
+            // };
+
+            // if curr.hand == old1.hand && old1.hand == old2.hand && old2.hand == old3.hand {
+            //     // 13: 4 no alternation
+            //     log(13, 1.2);
+            // } else if curr.hand != old1.hand
+            //     && old1.hand != old2.hand
+            //     && old2.hand != old3.hand
+            //     && curr.hand != Hand::Thumb
+            //     && old1.hand != Hand::Thumb
+            //     && old2.hand != Hand::Thumb
+            //     && old3.hand != Hand::Thumb
+            // {
+            //     // 14: 4 alternations in a row.
+            //     log(14, 0.01);
+            // }
+            //8: Alternation
+
+            evaluate_different_hand_penalties(old2, old1, count, &mut result);
+            evaluate_different_hand_penalties(old1, curr, count, &mut result);
+
+            // if curr.hand != old1.hand {
+            //     // log(8, -0.1);
+            //     log_penalty(8, -0.4, count, &mut result);
+            // }
+
+            evaluate_trigram_penalties(old2, old1, curr, count, &mut result);
+
+            // if curr.hand == old1.hand && old1.hand == old2.hand {
+            //     // 6: Roll reversal.
+            //     if (curr.finger == Finger::Middle
+            //         && old1.finger == Finger::Pinky
+            //         && old2.finger == Finger::Ring)
+            //         || curr.finger == Finger::Ring
+            //             && old1.finger == Finger::Pinky
+            //             && old2.finger == Finger::Middle
+            //     {
+            //         // log(6, 10.0);
+            //         log_penalty(6, 10.0, count, &mut result);
+            //     }
+
+            //     // 12: Twist.
+            //     if ((curr.row == Row::Top && old1.row == Row::MiddleTop && old2.row == Row::Bottom)
+            //         || (curr.row == Row::Bottom
+            //             && old1.row == Row::MiddleTop
+            //             && old2.row == Row::Top))
+            //         && ((is_roll_out(curr.finger, old1.finger)
+            //             && is_roll_out(old1.finger, old2.finger))
+            //             || (is_roll_in(curr.finger, old1.finger)
+            //                 && is_roll_in(old1.finger, old2.finger)))
+            //     {
+            //         // log(12, 5.0);
+            //         log_penalty(12, 5.0, count, &mut result);
+            //     }
+            // }
+
+            // // 11: Long jump sandwich.
+            // if curr.hand == old2.hand && curr.finger == old2.finger {
+            //     if curr.row == Row::Top && old2.row == Row::Bottom
+            //         || curr.row == Row::Bottom && old2.row == Row::Top
+            //     {
+            //         // log(11, 3.0);
+            //         log_penalty(11, 3.0, count, &mut result);
+            //     }
+            // }
         }
     }
     BestLayoutsEntry {
         layout: layout.clone(),
         penalty: result,
+    }
+}
+
+fn use_finger(kp: &KeyPress, count: &usize, result: &mut Penalty, i: usize) {
+    match kp.finger {
+        Finger::Pinky => result.fingers[i] += count,
+        Finger::Ring => result.fingers[i + 1] += count,
+        Finger::Middle => result.fingers[i + 2] += count,
+        Finger::Index => result.fingers[i + 3] += count,
+        Finger::Thumb => result.fingers[i + 4] += count,
+        Finger::ThumbBottom => result.fingers[i + 4] += count,
+    };
+}
+
+fn update_hand(kp: &KeyPress, count: &usize, result: &mut Penalty) {
+    match kp.hand {
+        Hand::Left => {
+            result.hands[0] += count;
+            use_finger(kp, count, result, 0);
+        }
+        Hand::Right => {
+            result.hands[1] += count;
+            use_finger(kp, count, result, 5);
+        }
+        _ => {}
+    }
+}
+
+fn log_same_finger_penalty(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    if curr.finger == prev.finger && curr.pos != prev.pos {
+        let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
+                            // log(1, penalty);
+        log_penalty(1, penalty, count, result);
+    }
+}
+
+fn log_long_jump_hand(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    match (prev.row, curr.row) {
+        (Row::Bottom, Row::Top) => {
+            log_penalty(2, 5.0, count, result);
+        }
+        (Row::Top, Row::Bottom) => {
+            log_penalty(2, 5.0, count, result);
+        }
+        _ => (),
+    }
+}
+
+fn log_long_jump(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    match (prev.row, curr.row, curr.finger == prev.finger) {
+        (Row::Bottom, Row::Top, true) => {
+            log_penalty(3, 20.0, count, result);
+        }
+        (Row::Top, Row::Bottom, true) => {
+            log_penalty(3, 20.0, count, result);
+        }
+        _ => (),
+    }
+}
+
+fn evaluate_trigram_penalties(
+    first: &KeyPress,
+    second: &KeyPress,
+    third: &KeyPress,
+    count: &usize,
+    result: &mut Penalty,
+) {
+    if third.hand == second.hand && second.hand == first.hand {
+        // 6: Roll reversal.
+
+        // Finger::Index => 0,
+        // Finger::Middle => 1,
+        // Finger::Ring => 2,
+        // Finger::Pinky => 3,
+        // Finger::Thumb => 4,
+
+        //roll out in
+        //1,2,0
+        //2,3,0
+        //2,3,1
+        //3,4,0
+        //3,4,1
+        //3,4,2
+
+        //roll in out wide
+        //1,0,2
+        //1,0,3
+        //1,0,4
+        //2,0,3
+        //2,0,4
+
+        //2,1,3
+        //2,1,4
+        //3,0,4
+        //3,1,4
+        //3,2,4
+
+        //roll in out thin
+        //2,0,1
+        //3,0,1
+        //3,0,2
+        //3,1,2
+
+        //roll back to same
+        //1,0,1
+        //1,2,1
+        //1,3,1
+        //1,4,1
+        //2,0,2
+        //2,1,2
+        //2,3,2
+        //2,4,2
+        //3,0,3
+        //3,1,3
+        //3,2,3
+        //4,0,4
+        //4,1,4
+        //4,2,4
+        //4,3,4
+
+
+        match (
+            third.finger.index() < first.finger.index(),
+            first.finger.index() < second.finger.index(),
+            third.finger.index() < second.finger.index(),
+            third.finger == Finger::Pinky,
+            third.finger == Finger::Thumb || third.finger == Finger::ThumbBottom
+        ) {
+            (true, true, true, false, false) => { log_penalty(6, 12.0, count, result); },
+
+            (false, false, false, true, false) => { log_penalty(6, 8.0, count, result); },
+
+            (false, false, false, false, true) => { log_penalty(6, 8.0, count, result); },
+
+            (false, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
+
+            (true, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
+            _ => (),
+        }
+
+        if (third.finger == Finger::Middle
+            && second.finger == Finger::Pinky
+            && first.finger == Finger::Ring)
+            || third.finger == Finger::Ring
+                && second.finger == Finger::Pinky
+                && first.finger == Finger::Middle
+        {
+            // log(6, 10.0);
+            log_penalty(6, 10.0, count, result);
+        }
+
+        // 12: Twist.
+        if ((third.row == Row::Top && second.row == Row::MiddleTop && first.row == Row::Bottom)
+            || (third.row == Row::Bottom && second.row == Row::MiddleTop && first.row == Row::Top))
+            && ((is_roll_out(third.finger, second.finger)
+                && is_roll_out(second.finger, first.finger))
+                || (is_roll_in(third.finger, second.finger)
+                    && is_roll_in(second.finger, first.finger)))
+        {
+            // log(12, 5.0);
+            log_penalty(12, 5.0, count, result);
+        }
+    }
+
+    // 11: Long jump sandwich.
+    if third.hand == first.hand && third.finger == first.finger {
+        if third.row == Row::Top && first.row == Row::Bottom
+            || third.row == Row::Bottom && first.row == Row::Top
+        {
+            // log(11, 3.0);
+            log_penalty(11, 3.0, count, result);
+        }
+    }
+}
+
+fn evaluate_different_hand_penalties(
+    prev: &KeyPress,
+    curr: &KeyPress,
+    count: &usize,
+    result: &mut Penalty,
+) {
+    if prev.hand != curr.hand {
+        //8: Alternation
+        log_penalty(8, -0.4, count, result);
+    }
+}
+
+fn evaluate_same_hand_penalties(
+    prev: &KeyPress,
+    curr: &KeyPress,
+    count: &usize,
+    result: &mut Penalty,
+) {
+    if prev.hand == curr.hand {
+        // 1: Same finger.
+        log_same_finger_penalty(prev, curr, count, result);
+
+        // if curr.finger == old1.finger && curr.pos != old1.pos {
+        //     let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
+        //                         // log(1, penalty);
+        //     log_penalty(1, penalty, count, &mut result);
+        // }
+
+        // 2: Long jump hand. pointless covered by long jump consec
+
+        log_long_jump_hand(prev, curr, count, result);
+
+        // match (curr.row, old1.row) {
+        //     (Row::Top, Row::Bottom) => {
+        //         log_penalty(2, 5.0, count, &mut result);
+        //     }
+        //     (Row::Bottom, Row::Top) => {
+        //         log_penalty(2, 5.0, count, &mut result);
+        //     }
+        //     _ => (),
+        // }
+
+        // if curr.row == Row::Top && old1.row == Row::Bottom
+        //     || curr.row == Row::Bottom && old1.row == Row::Top
+        // {
+        //     // log(2, 5.0);
+        //     log_penalty(2, 5.0, count, &mut result);
+        // }
+
+        // 3: Long jump.
+
+        log_long_jump(prev, curr, count, result);
+
+        // match (curr.row, old1.row, curr.finger == old1.finger) {
+        //     (Row::Top, Row::Bottom, true) => {
+        //         log_penalty(3, 20.0, count, &mut result);
+        //     }
+        //     (Row::Bottom, Row::Top, true) => {
+        //         log_penalty(3, 20.0, count, &mut result);
+        //     }
+        //     _ => (),
+        // }
+
+        // if curr.finger == old1.finger {
+        //     if curr.row == Row::Top && old1.row == Row::Bottom
+        //         || curr.row == Row::Bottom && old1.row == Row::Top
+        //     {
+        //         // log(3, 20.0);
+        //         log_penalty(3, 20.0, count, &mut result);
+        //     }
+        // }
+
+        // if (curr.row > old1.row) {
+        //     println!("{:?} > {:?}", curr.row, old1.row);
+        // }
+
+        // 4: Long jump consecutive.
+        log_long_jump_consecutive(prev, curr, count, result);
+
+        // if curr.row == Row::Top && old1.row == Row::Bottom
+        //     || curr.row == Row::Bottom && old1.row == Row::Top
+        // {
+        //     if curr.finger == Finger::Ring && old1.finger == Finger::Pinky
+        //         || curr.finger == Finger::Pinky && old1.finger == Finger::Ring
+        //         || curr.finger == Finger::Middle && old1.finger == Finger::Ring
+        //         || curr.finger == Finger::Ring && old1.finger == Finger::Middle
+        //         || (curr.finger == Finger::Index
+        //             && (old1.finger == Finger::Middle || old1.finger == Finger::Ring)
+        //             && curr.row == Row::Top
+        //             && old1.row == Row::Bottom)
+        //     {
+        //         // log(4, 5.0);
+        //         log_penalty(4, 5.0, count, &mut result);
+        //     }
+        // }
+
+        // 5: Pinky/ring twist.
+        log_pinky_ring_twist(prev, curr, count, result);
+
+        // if (curr.finger == Finger::Ring
+        //     && old1.finger == Finger::Pinky
+        //     && (curr.row == Row::MiddleBottom && old1.row == Row::Bottom))
+        //     || (curr.finger == Finger::Pinky
+        //         && old1.finger == Finger::Ring
+        //         && (curr.row == Row::MiddleBottom && old1.row == Row::Top
+        //             || curr.row == Row::MiddleBottom && old1.row == Row::MiddleTop
+        //             || curr.row == Row::Bottom && old1.row == Row::Top
+        //             || curr.row == Row::Bottom && old1.row == Row::MiddleTop
+        //             || curr.row == Row::Bottom && old1.row == Row::MiddleBottom))
+        // {
+        //     // log(5, 10.0);
+        //     log_penalty(5, 10.0, count, &mut result);
+        // }
+
+        // 9: Roll out.
+        // 7: Long Roll out.
+        log_roll_out(prev, curr, count, result);
+
+        // if is_roll_out( old1.finger, curr.finger) {
+        //     // log(9, 1.0);
+        //     log_penalty(9, 1.0, count, &mut result);
+        //     if curr.row == Row::Top && old1.row == Row::Bottom
+        //         || curr.row == Row::Bottom && old1.row == Row::Top
+        //     {
+        //         // log(7, 10.5);
+        //         log_penalty(7, 10.5, count, &mut result);
+        //     }
+        // }
+
+        // 10: Roll in.
+        log_roll_in(prev, curr, count, result);
+
+        // if is_roll_in(curr.finger, old1.finger) {
+        //     if old1.row != Row::Bottom
+        //         && !(curr.row == Row::Top && old1.row == Row::Bottom
+        //             || curr.row == Row::Bottom && old1.row == Row::Top)
+        //     {
+        //         // log(10, -0.5);
+        //         log_penalty(10, -0.5, count, &mut result);
+        //     } else {
+        //     }
+
+        //     if is_roll_in2(curr.finger, old1.finger) {
+        //         //result[10].times+=count;
+        //     }
+        //     if is_roll_out2(curr.finger, old1.finger) {
+        //         //result[9].times+=count;
+        //     }
+        // }
+    }
+}
+
+fn log_penalty(i: usize, penalty: f64, count: &usize, result: &mut Penalty) {
+    let p = penalty * *count as f64;
+    //println!("{}; {}", i, penalty);
+    result.penalties[i].times += count;
+    result.penalties[i].total += p;
+    result.total += p;
+}
+
+fn log_long_jump_consecutive(
+    prev: &KeyPress,
+    curr: &KeyPress,
+    count: &usize,
+    result: &mut Penalty,
+) {
+    match (prev.finger != curr.finger, curr.row.difference(prev.row)) {
+        (true, 2) => {
+            log_penalty(4, 5.0, count, result);
+        }
+        (true, 3) => {
+            log_penalty(4, 8.0, count, result);
+        }
+
+        _ => (),
+    }
+}
+
+fn log_pinky_ring_twist(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    match (prev.finger, curr.finger, prev.row, curr.row) {
+        //pinky twist into ring
+        (Finger::Pinky, Finger::Ring, Row::MiddleBottom, Row::MiddleBottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+        (Finger::Pinky, Finger::Ring, Row::Bottom, Row::Bottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+        (Finger::Pinky, Finger::Ring, Row::MiddleBottom, Row::Bottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+
+        //ring twist into pinky bottom
+        (Finger::Ring, Finger::Pinky, Row::Top, Row::Bottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+        (Finger::Ring, Finger::Pinky, Row::MiddleTop, Row::Bottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+        (Finger::Ring, Finger::Pinky, Row::MiddleBottom, Row::Bottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+
+        //ring twist into pinky middle bottom
+        (Finger::Ring, Finger::Pinky, Row::Top, Row::MiddleBottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+        (Finger::Ring, Finger::Pinky, Row::MiddleTop, Row::MiddleBottom) => {
+            log_penalty(5, 10.0, count, result);
+        }
+
+        _ => (),
+    }
+
+    // if (curr.finger == Finger::Ring
+    //     && prev.finger == Finger::Pinky
+    //     && (curr.row == Row::MiddleBottom && prev.row == Row::Bottom))
+    //     || (curr.finger == Finger::Pinky
+    //         && prev.finger == Finger::Ring
+    //         && (curr.row == Row::MiddleBottom && prev.row == Row::Top
+    //             || curr.row == Row::MiddleBottom && prev.row == Row::MiddleTop
+    //             || curr.row == Row::Bottom && prev.row == Row::Top
+    //             || curr.row == Row::Bottom && prev.row == Row::MiddleTop
+    //             || curr.row == Row::Bottom && prev.row == Row::MiddleBottom))
+    // {
+    //     // log(5, 10.0);
+    //     log_penalty(5, 10.0, count, &mut result);
+    // }
+}
+
+fn log_roll_out(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    match (
+        prev.finger.index() < curr.finger.index(),
+        curr.row.difference(prev.row),
+    ) {
+        (true, 0) => {
+            log_penalty(9, 1.0, count, result);
+        }
+        (true, 1) => {
+            log_penalty(9, 2.0, count, result);
+        }
+        (true, 2) => {
+            log_penalty(7, 12.0, count, result);
+        }
+        (true, 3) => {
+            log_penalty(7, 16.0, count, result);
+        }
+
+        _ => (),
+    }
+}
+
+fn log_roll_in(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
+    match (
+        prev.finger.index() < curr.finger.index(),
+        curr.row.difference(prev.row),
+    ) {
+        (true, 0) => {
+            log_penalty(10, -4.0, count, result);
+        }
+        (true, 1) => {
+            log_penalty(10, -2.0, count, result);
+        }
+        (true, 2) => {
+            log_penalty(10, 1.0, count, result);
+        }
+        (true, 3) => {
+            log_penalty(10, 4.0, count, result);
+        }
+
+        _ => (),
+    }
+}
+
+fn is_roll_out(prev: Finger, curr: Finger) -> bool {
+    match curr {
+        Finger::Middle => prev == Finger::Index,
+        Finger::Ring => prev != Finger::Pinky && prev != Finger::Ring && prev != Finger::Thumb,
+        Finger::Pinky => prev != Finger::Pinky && prev != Finger::Thumb,
+        _ => false,
+    }
+}
+// my restricted roll-in, as not all inward rolls feel good
+fn is_roll_in(prev: Finger, curr: Finger) -> bool {
+    match curr {
+        Finger::Index => prev != Finger::Thumb && prev != Finger::Index,
+        Finger::Middle => prev == Finger::Pinky || prev == Finger::Ring,
+        _ => false,
+    }
+}
+fn is_roll_out2(prev: Finger, curr: Finger) -> bool {
+    match curr {
+        Finger::Thumb => false,
+        Finger::ThumbBottom => false,
+        Finger::Index => prev == Finger::Thumb,
+        Finger::Middle => prev == Finger::Thumb || prev == Finger::Index,
+        Finger::Ring => prev != Finger::Pinky && prev != Finger::Ring,
+        Finger::Pinky => prev != Finger::Pinky,
+    }
+}
+// all roll-ins
+fn is_roll_in2(prev: Finger, curr: Finger) -> bool {
+    match curr {
+        Finger::Thumb => prev != Finger::Thumb,
+        Finger::ThumbBottom => prev != Finger::ThumbBottom,
+        Finger::Index => prev != Finger::Thumb && prev != Finger::Index,
+        Finger::Middle => prev == Finger::Pinky || prev == Finger::Ring,
+        Finger::Ring => prev == Finger::Pinky,
+        Finger::Pinky => false,
     }
 }

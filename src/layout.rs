@@ -85,22 +85,36 @@ pub struct LayoutShuffleMask(MaskMap);
 #[derive(Debug,Clone, Copy, PartialEq)]
 pub enum Finger 
 {
-	Thumb,
 	Index,
 	Middle,
 	Ring,
 	Pinky,
+	Thumb,
+	ThumbBottom,
+}
+
+impl Finger {
+	pub fn index(&self)
+	-> usize
+	{
+		match self {
+			Finger::Index => 0,
+			Finger::Middle => 1,
+			Finger::Ring => 2,
+			Finger::Pinky => 3,
+			_ => 4
+		}
+	}
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Hand
 {
 	Left,
-	Right,
-	Thumb
+	Right
 }
 
-#[derive(Debug,Clone, Copy, PartialEq)]
+#[derive(Debug,Clone, Copy, PartialEq, PartialOrd)]
 pub enum Row
 {
 	Top,
@@ -108,6 +122,36 @@ pub enum Row
 	MiddleBottom,
 	Bottom,
 	Thumb,
+}
+
+impl Row {
+	pub fn difference(&self, prev_row:Row)
+	-> usize
+	{
+		match (self, prev_row) {
+			(Row::Bottom, Row::Top) => 3,
+			(Row::Bottom, Row::MiddleTop) => 2,
+			(Row::Bottom, Row::MiddleBottom) => 1,
+			(Row::Bottom, Row::Bottom) => 0,
+
+			(Row::MiddleBottom, Row::Top) => 2,
+			(Row::MiddleBottom, Row::MiddleTop) => 1,
+			(Row::MiddleBottom, Row::MiddleBottom) => 0,
+			(Row::MiddleBottom, Row::Bottom) => 1,
+
+			(Row::MiddleTop, Row::Top) => 1,
+			(Row::MiddleTop, Row::MiddleTop) => 0,
+			(Row::MiddleTop, Row::MiddleBottom) => 1,
+			(Row::MiddleTop, Row::Bottom) => 2,
+
+			(Row::Top, Row::Top) => 0,
+			(Row::Top, Row::MiddleTop) => 1,
+			(Row::Top, Row::MiddleBottom) => 2,
+			(Row::Top, Row::Bottom) => 3,
+
+			_ => 0
+		}
+	}
 }
 
 #[derive(Clone, Copy)]
@@ -180,7 +224,7 @@ pub static KEY_FINGERS: FingerMap = [
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
 	Finger::Pinky, Finger::Ring, Finger::Middle, Finger::Index,		Finger::Index, Finger::Middle, Finger::Ring, Finger::Pinky,
 												 Finger::Thumb, 	Finger::Thumb,
-				   Finger::Thumb, Finger::Thumb, Finger::Thumb, 	Finger::Thumb, Finger::Thumb, Finger::Thumb
+	   Finger::ThumbBottom, Finger::ThumbBottom, Finger::Thumb, 	Finger::Thumb, Finger::ThumbBottom, Finger::ThumbBottom
 ];
 
 #[rustfmt::skip]
@@ -189,8 +233,8 @@ pub static KEY_HANDS: HandMap = [
 				Hand::Left, Hand::Left, Hand::Left,    	Hand::Right, Hand::Right, Hand::Right, 
 	Hand::Left, Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, Hand::Right, 
 	Hand::Left, Hand::Left, Hand::Left, Hand::Left,     Hand::Right, Hand::Right, Hand::Right, Hand::Right, 
-									   Hand::Thumb, 	Hand::Thumb,
-			 Hand::Thumb, Hand::Thumb, Hand::Thumb, 	Hand::Thumb, Hand::Thumb, Hand::Thumb
+									    Hand::Left, 	Hand::Right,
+			 	Hand::Left, Hand::Left, Hand::Left, 	Hand::Right, Hand::Right, Hand::Right
 ];
 
 #[rustfmt::skip]
@@ -241,6 +285,37 @@ impl Layout
 			let file_i = LAYOUT_FILE_IDXS[i];
 			lower[i] = *s.get(file_i as usize).unwrap_or(&'\0');
 			upper[i] = *s.get(file_i as usize + 40).unwrap_or(&'\0');
+		}
+
+		Layout(Layer(LayerKeys::new(lower)), Layer(LayerKeys::new(upper)))
+	}
+
+	pub fn from_lower_string(s: &str)
+	-> Layout
+	{
+		let s: Vec<char> = s.chars().collect();
+		let mut lower: [char; 36] = ['\0'; 36];
+		let mut upper: [char; 36] = ['\0'; 36];
+		
+		for i in 0..36 {
+			let file_i = LAYOUT_FILE_IDXS[i];
+			let key = if let Some(entry) = s.get(file_i as usize) {
+					let keychar = *entry;
+					let upperkeychar = keychar.to_uppercase().collect::<Vec<_>>()[0];
+					lower[i] = keychar;
+					upper[i] = upperkeychar;
+				};
+
+			// if key == &'\0' {
+			// 	lower[i] = '\0';
+			// 	upper[i] = '\0';
+			// }
+			// else {
+			// 	let keychar = *key;
+			// 	let upperkeychar = keychar.to_uppercase().collect::<Vec<_>>()[0];
+			// 	lower[i] = keychar;
+			// 	upper[i] = upperkeychar;
+			// }
 		}
 
 		Layout(Layer(LayerKeys::new(lower)), Layer(LayerKeys::new(upper)))

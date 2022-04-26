@@ -84,7 +84,7 @@ pub fn save_file<T>(filename: String, folder: String, data: &T) where T: Seriali
 pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, serde_json::Error> where T: Deserialize<'a> {
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
-    
+    println!("path----- {:?}", path.join(""));
     let file = File::open(path.join("")).expect("Unable to open file");
     let mut reader = BufReader::new(file);
 
@@ -121,6 +121,38 @@ pub fn read_directory_files(directory: &String, dir_filetype_filter: &String) ->
             let text = std::fs::read_to_string(path).ok()?;
             if !text.is_empty() {
                 return Some(text);
+            }
+        }
+        None
+    })
+    .collect::<Vec<_>>();
+}
+
+pub struct FileResult<T> {
+    pub data: T,
+    pub filename: String
+}
+
+pub fn read_json_directory_files<'a, T>(directory: &String, dir_filetype_filter: &String) -> Vec<FileResult<T>> where T: Deserialize<'a>  + std::marker::Send{
+    // let dir = fs::read_dir(".").expect("could not read directory");
+    // dir
+    return jwalk::WalkDir::new(directory)
+    .parallelism(Parallelism::RayonNewPool(0))
+    .into_iter()
+    .par_bridge()
+    .filter_map(|dir_entry_result| {
+        let dir_entry = dir_entry_result.ok()?;
+        if dir_entry.file_type().is_file() && dir_entry.file_name.to_string_lossy().ends_with(dir_filetype_filter) {
+            let path = dir_entry.path();
+            let filename: String = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            println!("path: {}", filename);
+            //println!("path2: {}", path.to_str().unwrap().to_string());
+            let text = read_json::<T>(filename.clone(), String::from("\\evaluation\\"));
+            
+            if text.is_ok() {
+                let result = FileResult { data: text.ok()?, filename: filename};
+
+                return Some(result);
             }
         }
         None

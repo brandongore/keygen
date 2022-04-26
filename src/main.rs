@@ -11,9 +11,10 @@ mod evaluator;
 
 use chrono::Utc;
 use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list};
-use evaluator::evaluate;
-use file_manager::read_directory_files;
+use evaluator::{evaluate, evaluate_layouts};
+use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
+use penalty::BestLayoutsEntry;
 use std::fs::File;
 use std::io::Read;
 use std::{collections::HashMap, env};
@@ -150,8 +151,9 @@ fn main() {
         "normalize" => normalize(corpus_filename, normalize_length),
         "batch" => batch(corpus_filename, &dir_filetype_filter, split_char, normalize_length),
         "default" => create_default(corpus_filename),
+        "evaluate" => batch_evaluate(corpus_filename, &dir_filetype_filter),
         "generate" => generate(corpus_filename, normalize_length),
-        // "run-ref" => run_ref(ngList, None),
+        "run-ref" => run_ref(corpus_filename, split_char, normalize_length),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
     };
@@ -254,6 +256,19 @@ fn create_default(
     evaluate(ngram_list);
 }
 
+fn batch_evaluate(
+    filepath: &String,
+    dir_filetype_filter: &String,
+) {
+    let contents = read_json_directory_files(filepath, dir_filetype_filter);
+    let layout_list = evaluate_layouts(contents);
+    
+    for entry in layout_list {
+        let folder = String::from("\\evaluated\\");
+        save_small_file::<Vec<BestLayoutsEntry>>(entry.filename, String::from(folder), &entry.data);
+    }
+}
+
 fn generate(
     filepath: &String,
     normalize_length: usize
@@ -264,26 +279,34 @@ fn generate(
     save_ngram_list(&processed_filename, ngram_list);
 }
 
-// fn run_ref(corpus: NgramList,quartads:Option<&NgramList>)
-// {
-// 	let run_ref_ = |quartads|{  // making typechecker happy
+fn run_ref(
+    filepath: &String,
+    split_char: String,
+    normalize_length: usize 
+){
+    let corpus = read_text(&filepath.to_string());
+	let run_ref_ = |ngrams|{  // making typechecker happy
 
-// 		let ref_test = |s:&str, l:&layout::Layout|{
-// 			println!("Reference: {}", s);
-// 			let init_pos_map = l.get_position_map();
-// 			let penalty= penalty::calculate_penalty(quartads, &l);
-// 			simulator::print_result(&penalty);
-// 			println!("");
-// 		};
-// 		ref_test("BASE", &layout::BASE);
-// 	};
+		let ref_test = |s:&str, l:&layout::Layout|{
+			println!("Reference: {}", s);
+			let init_pos_map = l.get_position_map();
+			let penalty= penalty::calculate_penalty(ngrams, &l);
+			simulator::print_result(&penalty);
+			println!("");
+		};
+		ref_test("BASE", &layout::BASE);
+	};
 
-// 	match  quartads {
-// 		Some(quartads) => run_ref_(quartads),
-// 		None => run_ref_(&corpus_manager::prepare_ngram_list(s, 4)),
-// 	}
+    let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
 
-// }
+    run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
+
+	// match  quartads {
+	// 	Some(quartads) => run_ref_(quartads),
+	// 	None => run_ref_(&corpus_manager::prepare_ngram_list(corpus, swap_list, &split_char , normalize_length)),
+	// }
+
+}
 
 fn refine(s: &str, layout: &layout::Layout, debug: bool, top: usize, swaps: usize, split_char: &String) {
     let init_pos_map = layout::BASE.get_position_map();

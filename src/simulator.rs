@@ -207,7 +207,7 @@ pub fn print_result<'a>(item: &BestLayoutsEntry) {
                     format!(
                         "{:<30} | {:<7.2} | {:<7.3} | {:<8.3} | {:<10.0}\n",
                         penalty.name,
-                        (100.0 * penalty.times / (len as f64)),
+                        (100.0 * penalty.times as f64 / (len as f64)),
                         penalty.total / (len as f64),
                         100.0 * penalty.total / total,
                         penalty.total
