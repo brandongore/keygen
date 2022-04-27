@@ -125,6 +125,18 @@ pub enum Row
 }
 
 impl Row {
+	pub fn index(&self)
+	-> usize
+	{
+		match self {
+			Row::Top => 0,
+			Row::MiddleTop => 1,
+			Row::MiddleBottom => 2,
+			Row::Bottom => 3,
+			Row::Thumb => 4
+		}
+	}
+
 	pub fn difference(&self, prev_row:Row)
 	-> usize
 	{
