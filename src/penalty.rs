@@ -543,13 +543,17 @@ fn evaluate_trigram_penalties(
         //1,2,1
         //1,3,1
         //1,4,1
+
         //2,0,2
         //2,1,2
         //2,3,2
         //2,4,2
+
         //3,0,3
         //3,1,3
         //3,2,3
+        //3,4,3
+
         //4,0,4
         //4,1,4
         //4,2,4
@@ -561,17 +565,31 @@ fn evaluate_trigram_penalties(
             first.finger.index() < second.finger.index(),
             third.finger.index() < second.finger.index(),
             third.finger == Finger::Pinky,
-            third.finger == Finger::Thumb || third.finger == Finger::ThumbBottom
+            third.finger == Finger::Thumb || third.finger == Finger::ThumbBottom,
+            first.finger == third.finger
         ) {
-            (true, true, true, false, false) => { log_penalty(6, 12.0, count, result); },
+            //rollback out in
+            (true, true, true, false, false, false) => { log_penalty(6, 12.0, count, result); },
+            //rollback in out wide pinky
+            (false, false, false, true, false, false) => { log_penalty(6, 8.0, count, result); },
+            //rollback in out wide thumb
+            (false, false, false, false, true, false) => { log_penalty(6, 8.0, count, result); },
+            //rollback in out wide ring
+            (false, false, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
+            //roll in out thin
+            (true, false, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
 
-            (false, false, false, true, false) => { log_penalty(6, 8.0, count, result); },
-
-            (false, false, false, false, true) => { log_penalty(6, 8.0, count, result); },
-
-            (false, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
-
-            (true, false, false, false, false) => { log_penalty(6, 8.0, count, result); },
+            //rollback to same
+            //ring or index rollback smaller
+            (false, false, false, false, false, true) => { log_penalty(6, 4.0, count, result); },
+            //ring or index rollback bigger
+            (false, true, true, false, false, true) => { log_penalty(6, 4.0, count, result); },
+            //pinky rollback smaller
+            (false, false, false, true, false, true) => { log_penalty(6, 4.0, count, result); },
+            //pinky rollback bigger
+            (false, true, true, true, false, true) => { log_penalty(6, 6.0, count, result); },
+            //thumb rollback
+            (false, false, false, false, true, true) => { log_penalty(6, 4.0, count, result); },
             _ => (),
         }
 
