@@ -11,9 +11,10 @@ mod evaluator;
 
 use chrono::Utc;
 use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list};
-use evaluator::{evaluate, evaluate_layouts};
+use evaluator::{evaluate, evaluate_layouts, compare_layouts};
 use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
+use itertools::Itertools;
 use penalty::BestLayoutsEntry;
 use std::fs::File;
 use std::io::Read;
@@ -21,7 +22,8 @@ use std::{collections::HashMap, env};
 use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
 use crate::corpus_manager::{NgramList, SwapCharList, prepare_ngram_list, save_ngram_list, merge_ngram_lists, read_ngram_list, parse_ngram_list, normalize_ngram_list};
-use crate::file_manager::{read_text, read_layout, save_benchmark};
+use crate::file_manager::{read_text, read_layout, save_benchmark, read_json_evaluated_directory_files};
+use crate::layout::{Layout, NUM_OF_KEYS};
 
 //  made thumbs their own hand,
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
@@ -125,7 +127,7 @@ fn main() {
     };
 
     // Read layout, if applicable.
-    let layout = read_layout(&layout_filename);
+    //let layout = read_layout(&layout_filename);
 
     // Parse options.
     let debug = matches.opt_present("d");
@@ -145,13 +147,14 @@ fn main() {
 
     match command.as_ref() {
         "prepare" => prepare(corpus_filename, split_char),
-        "run" => run(corpus_filename, &layout, debug, top, swaps, load_processed, split_char, ftimer),
+        //"run" => run(corpus_filename, &layout, debug, top, swaps, load_processed, split_char, ftimer),
         "merge" => merge(corpus_filename),
         "parse" => parse(corpus_filename, split_char),
         "normalize" => normalize(corpus_filename, normalize_length),
         "batch" => batch(corpus_filename, &dir_filetype_filter, split_char, normalize_length),
         "default" => create_default(corpus_filename),
-        "evaluate" => batch_evaluate(corpus_filename, &dir_filetype_filter),
+        "evaluate" => batch_evaluate(corpus_filename, &layout_filename, &dir_filetype_filter, ftimer),
+        "compare" => batch_compare(&layout_filename, &dir_filetype_filter, ftimer),
         "generate" => generate(corpus_filename, normalize_length),
         "run-ref" => run_ref(corpus_filename, split_char, normalize_length),
         _ => print_usage(progname, opts),
@@ -257,16 +260,176 @@ fn create_default(
 }
 
 fn batch_evaluate(
-    filepath: &String,
+    corpus_filepath: &String,
+    layout_filepath: &String,
     dir_filetype_filter: &String,
+    timer: &mut HashMap<String, TimerState>,
 ) {
-    let contents = read_json_directory_files(filepath, dir_filetype_filter);
-    let layout_list = evaluate_layouts(contents);
-    
+     //cargo run --release --features func_timer -- evaluate count_1w_normalized_3 C:\dev\dactylmanuform\rustkeygen\mykeygen\keygen\evaluation -f ".json"
+
+    let existing_ngram_list= read_ngram_list(&corpus_filepath);
+
+    let layouts: Vec<file_manager::FileResult<Vec<String>>> = read_json_directory_files(layout_filepath, dir_filetype_filter);
+    timer.start(String::from("evaluate"));
+    let layout_list = evaluate_layouts(existing_ngram_list, layouts, timer);
+    timer.stop(String::from("evaluate"));
+    println!("{}", layout_list.len());
     for entry in layout_list {
         let folder = String::from("\\evaluated\\");
         save_small_file::<Vec<BestLayoutsEntry>>(entry.filename, String::from(folder), &entry.data);
     }
+}
+
+fn batch_compare(
+    layout_filepath: &String,
+    dir_filetype_filter: &String,
+    timer: &mut HashMap<String, TimerState>,
+) {
+     //cargo run --release --features func_timer -- evaluate count_1w_normalized_3 C:\dev\dactylmanuform\rustkeygen\mykeygen\keygen\evaluation -f ".json"
+     println!("{}", layout_filepath);
+    let layouts: Vec<file_manager::FileResult<Vec<BestLayoutsEntry>>> = read_json_evaluated_directory_files(layout_filepath, dir_filetype_filter);
+    println!("{}", layouts.len());
+    let result = compare_layouts(layouts, timer);
+
+    println!("................................................");
+
+    for entry in result {
+        println!("************************************************");
+        print_result(&entry);
+        println!("************************************************");
+    }
+}
+
+pub fn normalize_count(count:usize, len: usize) -> f64{
+    return (count as f64) / len as f64;
+}
+
+pub fn normalize_penalty(penalty:f64, min: f64, range: f64) -> f64{
+    return (penalty - min) / range;
+}
+
+pub fn print_result<'a>(item: &BestLayoutsEntry) {
+    let layout = &item.layout;
+    let total = item.penalty.total;
+    let len = item.penalty.len;
+    let penalties = &item.penalty.penalties;
+    let penalty = &item.penalty;
+    let fingers = &penalty.fingers;
+    let hands = &penalty.hands;
+    let show_all = false;
+    let positions = item.penalty.pos;
+    let position_penalties = item.penalty.pos_pen;
+    let mut position_working = [0; NUM_OF_KEYS];
+    position_penalties.into_iter().enumerate().for_each(|(i, penalty)|{
+        position_working[i] = (penalty * 100.0) as u128;
+    });
+    position_working.sort();
+
+    let max_position = position_working[NUM_OF_KEYS-1];
+    let min_position_penalty = position_working[0] as f64 / 100.0;
+    let range_position_penalty = max_position as f64/100.0 - min_position_penalty;
+
+    print!(
+        "{}{}{}{}{}{}{}{}{}{}{}{}",
+        format!("\n{}\n", layout),
+        format!("{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_penalty(position_penalties[0], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[1], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[2], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[3], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[4], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[5], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[6], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[7], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[8], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[9], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[10], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[11], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[12], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[13], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[14], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[15], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[16], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[17], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[18], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[19], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[20], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[21], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[22], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[23], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[24], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[25], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[26], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[27], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_penalty(position_penalties[28], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[29], min_position_penalty, range_position_penalty), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[30], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[31], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[32], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[33], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[34], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[35], min_position_penalty, range_position_penalty),""
+), 
+		),
+		format!("\n{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_count(positions[0], len), normalize_count(positions[1], len), normalize_count(positions[2], len), 		normalize_count(positions[3], len), normalize_count(positions[4], len), normalize_count(positions[5], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[6], len), normalize_count(positions[7], len), normalize_count(positions[8], len), 		normalize_count(positions[9], len), normalize_count(positions[10], len), normalize_count(positions[11], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[12], len), normalize_count(positions[13], len), normalize_count(positions[14], len), normalize_count(positions[15], len), 	normalize_count(positions[16], len), normalize_count(positions[17], len), normalize_count(positions[18], len), normalize_count(positions[19], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[20], len), normalize_count(positions[21], len), normalize_count(positions[22], len), normalize_count(positions[23], len), 	normalize_count(positions[24], len), normalize_count(positions[25], len), normalize_count(positions[26], len), normalize_count(positions[27], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_count(positions[28], len), 	normalize_count(positions[29], len), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[30], len), normalize_count(positions[31], len),normalize_count(positions[32], len), 	normalize_count(positions[33], len),normalize_count(positions[34], len), normalize_count(positions[35], len),""
+), 
+		),
+        format!("hands: {:<5.3} | {:<5.3}\n", normalize_penalty(hands[0] as f64, 0.0, len as f64), normalize_penalty(hands[1] as f64, 0.0, len as f64)),
+        format!(
+            "total: {0:<10.2}; scaled: {1:<10.4}\n",
+            total,
+            total / (len as f64)
+        ),
+        //format!("base {}\n",penalties[0]),
+        format!(
+            "\n{:<30} | {:^7} | {:^7} | {:^8} | {:<10}\n",
+            "Name", "% times", "Avg", "% Total", "Total"
+        ),
+        "----------------------------------------------------------------------\n",
+        penalties
+            .into_iter()
+            .map(|penalty| {
+                if penalty.show || show_all {
+                    format!(
+                        "{:<30} | {:<7.2} | {:<7.3} | {:<8.3} | {:<10.0}\n",
+                        penalty.name,
+                        (100.0 * penalty.times as f64 / (len as f64)),
+                        penalty.total / (len as f64),
+                        100.0 * penalty.total / total,
+                        penalty.total
+                    )
+                } else {
+                    "".to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        "----------------------------------------------------------------------\n",
+        format!(
+            "\n{:^5.1} {:^5.1} {:^5.1} {:^5.1} | {:^5.1} {:^5.1} {:^5.1} {:^5.1}\n",
+            fingers[0] as f64 * 100.0 / len as f64 ,
+            fingers[1] as f64 * 100.0 / len as f64 ,
+            fingers[2] as f64 * 100.0 / len as f64 ,
+            fingers[3] as f64 * 100.0 / len as f64 ,
+            fingers[7] as f64 * 100.0 / len as f64 ,
+            fingers[6] as f64 * 100.0 / len as f64 ,
+            fingers[5] as f64 * 100.0 / len as f64 ,
+            fingers[4] as f64 * 100.0 / len as f64 
+        ),
+
+        format!("{:^5.1}| {:^5.1}\n", penalty.hands[0] as f64 * 100.0 / len as f64 , penalty.hands[1] as f64 * 100.0 / len as f64 ),
+        "##########################################################################\n"
+    );
 }
 
 fn generate(
@@ -290,8 +453,8 @@ fn run_ref(
 		let ref_test = |s:&str, l:&layout::Layout|{
 			println!("Reference: {}", s);
 			let init_pos_map = l.get_position_map();
-			let penalty= penalty::calculate_penalty(ngrams, &l);
-			simulator::print_result(&penalty);
+			// let penalty= penalty::calculate_penalty(ngrams, &l);
+			// simulator::print_result(&penalty);
 			println!("");
 		};
 		ref_test("BASE", &layout::BASE);

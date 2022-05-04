@@ -8,6 +8,7 @@ use crate::corpus_manager;
 use crate::file_manager::save_run_state;
 use crate::layout;
 use crate::penalty;
+use crate::timer::FuncTimer;
 use crate::timer::Timer;
 use crate::timer::TimerState;
 
@@ -32,10 +33,11 @@ pub fn simulate<'a>(
     const ITERATIONS: i32 = 1;
     let threads = 1;//num_cpus::get();
     let BEST_LAYOUTS_KEPT: usize = 1;//threads * 2;
+    let timer = &mut FuncTimer::new();
 
-    let initial_penalty = || penalty::calculate_penalty(&quartads, init_layout);
-    let mut best_layouts: Vec<BestLayoutsEntry> =
-        (0..BEST_LAYOUTS_KEPT).map(|_| initial_penalty()).collect();
+    // let mut initial_penalty = || penalty::calculate_penalty(&quartads, init_layout, timer);
+     let mut best_layouts: Vec<BestLayoutsEntry> = Vec::new();
+    //     (0..BEST_LAYOUTS_KEPT).map(|_| initial_penalty()).collect();
 
     // in each iteration each thread takes a random layout and tries to optimalize it for 5000 cycles;
     //results are appended to bestLayouts, which is then sorted and truntcated back to best ten
@@ -63,7 +65,8 @@ pub fn simulate<'a>(
                         .shuffle(random::<usize>() % num_swaps + 1);
 
                     // Calculate penalty.
-                    curr_layout = penalty::calculate_penalty(&quartads, &curr_layout.layout);
+                    let timer2 = &mut FuncTimer::new();
+                    // curr_layout = penalty::calculate_penalty(&quartads, &curr_layout.layout, timer2);
 
                     if curr_layout.penalty.total < bestLayout.penalty.total {
                         bestLayout = curr_layout.clone();

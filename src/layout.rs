@@ -107,7 +107,7 @@ impl Finger {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hand
 {
 	Left,
@@ -166,7 +166,7 @@ impl Row {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct KeyPress
 {
 	pub kc:     char,
@@ -427,17 +427,31 @@ impl fmt::Display for Layer
 	-> fmt::Result
 	{
 		let Layer(ref layer) = *self;
-		write!(f, "{} {} {} | {} {} {}
-{} {} {} | {} {} {}
-{} {} {} {} | {} {} {} {}
-{} {} {} {} | {} {} {} {}
-        {} | {}
-{} {} {} | {} {} {}",
-			layer[0], layer[1], layer[2], 		layer[3], layer[4], layer[5], 
-			layer[6], layer[7], layer[8], 		layer[9], layer[10], layer[11], 
- layer[12], layer[13], layer[14], layer[15], 	layer[16], layer[17], layer[18], layer[19], 
-layer[20], layer[21], layer[22], layer[23], 	layer[24], layer[25], layer[26], layer[27], 
-								 layer[28], 	layer[29], 
-			layer[30], layer[31],layer[32], 	layer[33],layer[34], layer[35])
+		write!(f, "{}\n{}\n{}\n{}\n{}\n{}",
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	"", layer[0], layer[1], layer[2], 		layer[3], layer[4], layer[5],""
+), 
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	"",layer[6], layer[7], layer[8], 		layer[9], layer[10], layer[11],""
+), 
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	layer[12], layer[13], layer[14], layer[15], 	layer[16], layer[17], layer[18], layer[19], 
+), 
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	layer[20], layer[21], layer[22], layer[23], 	layer[24], layer[25], layer[26], layer[27], 
+), 
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	"","","",layer[28], 	layer[29], "","",""
+), 
+format!(
+	"{:<2} {:<2} {:<2} {:<2} | {:<2} {:<2} {:<2} {:<2}",
+	"",layer[30], layer[31],layer[32], 	layer[33],layer[34], layer[35],""
+), 
+		)
 	}
 }

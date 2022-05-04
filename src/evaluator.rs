@@ -1,8 +1,8 @@
 use crate::{
     corpus_manager::NgramList,
-    file_manager::*,
+    file_manager::{*, self},
     layout::{self, Finger, KeyMap, LayerKeys, Row, KEY_FINGERS, KEY_ROWS, NUM_OF_KEYS, Layout},
-    penalty::{BASE_PENALTY, BestLayoutsEntry, self, Penalty},
+    penalty::{BASE_PENALTY, BestLayoutsEntry, self, Penalty, calculate_penalty}, timer::{TimerState, Timer},
 };
 use itertools::Itertools;
 use rayon::{iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator, IndexedParallelIterator}, slice::{ParallelSliceMut, ParallelSlice}};
@@ -379,34 +379,63 @@ pub fn evaluate(ngram_list: NgramList) {
     // }
 }
 
-pub fn evaluate_layouts(layouts: Vec<FileResult<Vec<String>>>) -> Vec<FileResult<Vec<BestLayoutsEntry>>>{
+pub fn evaluate_layouts(ngram_list:NgramList, layouts: Vec<FileResult<Vec<String>>>, timer: &mut HashMap<String, TimerState>) -> Vec<FileResult<Vec<BestLayoutsEntry>>>{
     let mut best_layout_results: Vec<FileResult<Vec<BestLayoutsEntry>>> = Vec::new();
+    timer.start(String::from("ngrams"));
+    let processed_ngrams: Vec<(Vec<char>, usize)> = ngram_list.map.into_iter().map(|item|(item.0.chars().collect(),item.1)).collect();
+    timer.stop(String::from("ngrams"));
+    // let first = &layouts[0].data[0..1][0];
 
+    // let layout = Layout::from_lower_string(&first[..]);
+    // //let penalty = Penalty { penalties: Vec::new(), fingers: [(); 10].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
+    // //let best_layout = BestLayoutsEntry { layout, penalty};
+    // timer.start(String::from("calculate penalty"));
+    // let best_layout = calculate_penalty(&processed_ngrams, &layout);
+    // timer.stop(String::from("calculate penalty"));
+ 
     for file_result in layouts.iter() {
+    
          let mut chunked_results: Vec<FileResult<Vec<BestLayoutsEntry>>> = file_result.data.par_chunks(50000).enumerate().map(|(i, slice)|{
             let mut best_layouts: Vec<BestLayoutsEntry> = Vec::new();
-            
+
             for layout_string in slice.iter() {
                 let layout = Layout::from_lower_string(&layout_string[..]);
-                let penalty = Penalty { penalties: Vec::new(), fingers: [(); 10].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
-                let best_layout = BestLayoutsEntry { layout, penalty};
+                let best_layout = calculate_penalty(&processed_ngrams, &layout);
                 best_layouts.push(best_layout);
             }
+
             let chunked_filename = [file_result.filename.clone(),String::from("_"), i.to_string()].join("");
             let best_layouts_result = FileResult {data: best_layouts, filename: chunked_filename};
             best_layouts_result
-            //best_layout_results.push(best_layouts_result);
         }).collect();
         best_layout_results.append(&mut chunked_results);
-        // for layout_string in file_result.data.iter() {
-        //     let layout = Layout::from_lower_string(&layout_string[..]);
-        //     let penalty = Penalty { penalties: Vec::new(), fingers: [(); 8].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
-        //     let best_layout = BestLayoutsEntry { layout, penalty};
-        //     best_layouts.push(best_layout);
-        // }
-        // let best_layouts_result = FileResult {data: best_layouts, filename: file_result.filename.clone()};
-        // best_layout_results.push(best_layouts_result);
     }
+
+    return best_layout_results;
+}
+
+
+pub fn compare_layouts(mut layouts: Vec<file_manager::FileResult<Vec<BestLayoutsEntry>>>, timer: &mut HashMap<String, TimerState>) -> Vec<BestLayoutsEntry>{
+    let mut best_layout_results: Vec<BestLayoutsEntry> = Vec::new();
+
+    // let first = &layouts[0].data[0..1][0];
+
+    // let layout = Layout::from_lower_string(&first[..]);
+    // //let penalty = Penalty { penalties: Vec::new(), fingers: [(); 10].map(|_| 0), hands: [(); 2].map(|_| 0), total: 0.0, len: 0 };
+    // //let best_layout = BestLayoutsEntry { layout, penalty};
+    // timer.start(String::from("calculate penalty"));
+    // let best_layout = calculate_penalty(&processed_ngrams, &layout);
+    // timer.stop(String::from("calculate penalty"));
+
+    for file_result in layouts.iter() {
+
+    let mut items = file_result.data.clone();    
+    items.sort_unstable();//.sort_by(|layout1, layout2| layout1.penalty.total.total_cmp(&layout2.penalty.total));
+    best_layout_results.extend_from_slice(&items[0..10]);
+    }
+
+    best_layout_results.sort_unstable();
+    best_layout_results.truncate(10);
 
     return best_layout_results;
 }

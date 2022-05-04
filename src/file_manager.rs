@@ -1,9 +1,9 @@
-use std::{fs::{File, DirEntry, self}, io::{BufWriter, Read, BufReader}};
+use std::{fs::{File, DirEntry, self}, io::{BufWriter, Read, BufReader}, path::Path};
 
 use crate::{penalty, timer::{FuncTimerDisplay, get_sorted_times}, layout::{self, Layout}};
 
 use chrono::Utc;
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::iter::{ParallelBridge, ParallelIterator, IntoParallelIterator, IntoParallelRefIterator};
 use serde::{Deserialize, Serialize};
 use penalty::*;
 use std::error::Error;
@@ -134,8 +134,6 @@ pub struct FileResult<T> {
 }
 
 pub fn read_json_directory_files<'a, T>(directory: &String, dir_filetype_filter: &String) -> Vec<FileResult<T>> where T: Deserialize<'a>  + std::marker::Send{
-    // let dir = fs::read_dir(".").expect("could not read directory");
-    // dir
     return jwalk::WalkDir::new(directory)
     .parallelism(Parallelism::RayonNewPool(0))
     .into_iter()
@@ -148,6 +146,31 @@ pub fn read_json_directory_files<'a, T>(directory: &String, dir_filetype_filter:
             println!("path: {}", filename);
             //println!("path2: {}", path.to_str().unwrap().to_string());
             let text = read_json::<T>(filename.clone(), String::from("\\evaluation\\"));
+            
+            if text.is_ok() {
+                let result = FileResult { data: text.ok()?, filename: filename};
+
+                return Some(result);
+            }
+        }
+        None
+    })
+    .collect::<Vec<_>>();
+}
+
+pub fn read_json_evaluated_directory_files<'a, T>(directory: &String, dir_filetype_filter: &String) -> Vec<FileResult<T>> where T: Deserialize<'a>  + std::marker::Send{
+    return jwalk::WalkDir::new(directory)
+    .parallelism(Parallelism::RayonNewPool(0))
+    .into_iter()
+    .par_bridge()
+    .filter_map(|dir_entry_result| {
+        let dir_entry = dir_entry_result.ok()?;
+        if dir_entry.file_type().is_file() && dir_entry.file_name.to_string_lossy().ends_with(dir_filetype_filter) {
+            let path = dir_entry.path();
+            let filename: String = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            //println!("path: {}", filename);
+            //println!("path2: {}", path.to_str().unwrap().to_string());
+            let text = read_json::<T>(filename.clone(), String::from("\\evaluated\\"));
             
             if text.is_ok() {
                 let result = FileResult { data: text.ok()?, filename: filename};
