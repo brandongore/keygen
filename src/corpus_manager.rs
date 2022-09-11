@@ -1,16 +1,13 @@
 use crate::file_manager::*;
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 use itertools::Itertools;
-use serde::{
-    de::{MapAccess, SeqAccess},
-    Deserialize, Serialize,
-};
-use std::{collections::HashMap, fmt};
+use serde::{ de::{ MapAccess, SeqAccess }, Deserialize, Serialize };
+use std::{ collections::HashMap, fmt };
 
-use serde::de::{Deserializer, Error, Visitor};
-use serde_json::{Map, Value};
+use serde::de::{ Deserializer, Error, Visitor };
+use serde_json::{ Map, Value };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NgramList {
     pub map: HashMap<String, usize>,
     pub gram: usize,
@@ -56,7 +53,7 @@ pub fn prepare_ngram_list(
     corpus: &String,
     swap_char_list: SwapCharList,
     split_char: &String,
-    length: usize,
+    length: usize
 ) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
 
@@ -69,14 +66,17 @@ pub fn prepare_ngram_list(
     for x in corpus.chars() {
         match x {
             x if swap_char_list.map.contains_key(&x) => {
-                processed_corpus.push(*swap_char_list.map.get(&x).unwrap_or(&(0 as char)))
+                processed_corpus.push(*swap_char_list.map.get(&x).unwrap_or(&(0 as char)));
             }
             x => processed_corpus.push(x),
         }
     }
 
     if !split_char.to_string().is_empty() {
-        let lines: Vec<String> = processed_corpus.lines().map(|x| String::from(x)).collect();
+        let lines: Vec<String> = processed_corpus
+            .lines()
+            .map(|x| String::from(x))
+            .collect();
         for i in 0..lines.len() {
             let line = &lines[i];
             let split: Vec<&str> = line.split(split_char).collect();
@@ -109,11 +109,35 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
 
     for item in corpus {
         if item.chars().all(|c| (c as i32) <= 128) {
-            for i in 0..item.chars().count() - length {
-                let slice = &item.to_lowercase()[i..i + length];
-                if slice.chars().all(|c|  ((c as i32) >= 65 && (c as i32) <= 90) || ((c as i32) >= 97 && (c as i32) <= 122)) {
-                    let entry = ngram_list.entry(slice.to_string()).or_insert(0);
-                    *entry += 1;
+            if item.chars().count() < length {
+                let slice = format!("{}{:<indent$}", &item.to_lowercase(), indent=length);
+                    if
+                        slice
+                            .chars()
+                            .all(
+                                |c|
+                                    ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                    ((c as i32) >= 97 && (c as i32) <= 122)
+                            )
+                    {
+                        let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+                        *entry += 1;
+                    }
+            } else {
+                for i in 0..item.chars().count() - length {
+                    let slice = &item.to_lowercase()[i..i + length];
+                    if
+                        slice
+                            .chars()
+                            .all(
+                                |c|
+                                    ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                    ((c as i32) >= 97 && (c as i32) <= 122)
+                            )
+                    {
+                        let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+                        *entry += 1;
+                    }
                 }
             }
         }
@@ -131,25 +155,33 @@ pub fn save_ngram_list(filename: &String, ngram_list: NgramList) {
 }
 
 pub fn read_ngram_list(filepath: &String) -> NgramList {
-    return read_json::<NgramList>(filepath.to_string(), String::from("\\processed\\"))
-        .unwrap_or_else(|_| panic!("Could not read corpus"));
+    return read_json::<NgramList>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
 }
 
 pub fn read_json_array_list(filepath: &String) -> Vec<String> {
-    return read_json::<Vec<String>>(filepath.to_string(), String::from("\\processed\\"))
-        .unwrap_or_else(|_| panic!("Could not read list"));
+    return read_json::<Vec<String>>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read list"));
 }
 
 pub fn merge_ngram_lists(filepaths: Vec<String>) -> NgramList {
     let mut ngram_lists: Vec<NgramList> = Vec::new();
     for filepath in filepaths {
-        let ngram_list =
-            read_json::<NgramList>(filepath.to_string(), String::from("\\processed\\"))
-                .unwrap_or_else(|_| panic!("Could not read corpus"));
+        let ngram_list = read_json::<NgramList>(
+            filepath.to_string(),
+            String::from("\\processed\\")
+        ).unwrap_or_else(|_| panic!("Could not read corpus"));
         ngram_lists.push(ngram_list);
     }
 
-    let flattened_list = ngram_lists.iter().map(|x| x.clone()).collect::<NgramList>();
+    let flattened_list = ngram_lists
+        .iter()
+        .map(|x| x.clone())
+        .collect::<NgramList>();
 
     return flattened_list;
 }
@@ -158,14 +190,19 @@ pub fn parse_ngram_list(
     corpus: &String,
     split_char: &String,
     calc_gram: bool,
-    length: usize,
+    length: usize
 ) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
 
     //convert windows newline to just newline for better ngrams
     let corpus = corpus.replace("\r\n", "\n");
 
-    let lines: Vec<String> = corpus.lines().map(|x| String::from(x)).collect();
+    let lines: Vec<String> = corpus
+        .lines()
+        .map(|x| String::from(x))
+        .collect();
+
+    println!("lines 1 {}", lines[0]);
 
     let mut gram_type = length;
     if !split_char.to_string().is_empty() {
@@ -195,16 +232,22 @@ pub fn parse_ngram_list(
 pub fn batch_parse_ngram_list(
     corpora: Vec<String>,
     split_char: &String,
-    length: usize,
+    length: usize
 ) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
 
     //convert windows newline to just newline for better ngrams
-    let processed_corpora: Vec<String> = corpora.iter().map(|x| x.replace("\r\n", "\n")).collect();
+    let processed_corpora: Vec<String> = corpora
+        .iter()
+        .map(|x| x.replace("\r\n", "\n"))
+        .collect();
 
     for corpus in processed_corpora {
         if !split_char.to_string().is_empty() {
-            let lines: Vec<String> = corpus.lines().map(|x| String::from(x)).collect();
+            let lines: Vec<String> = corpus
+                .lines()
+                .map(|x| String::from(x))
+                .collect();
             for i in 0..lines.len() {
                 let line = &lines[i];
                 let split: Vec<&str> = line.split(split_char).collect();
@@ -234,6 +277,7 @@ pub fn batch_parse_ngram_list(
 }
 
 pub fn normalize_ngram_list(existing_ngram_list: NgramList, length: usize) -> NgramList {
+    //this method may have issues, doesnt seem to count from/to correctly
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
 
     let mut count_missed = 0;

@@ -1,9 +1,12 @@
 evaluation
 processed
 benchmarks
-results
+simulator_results
+evaluator_results
 target
 output
 experimental
 .vscode
 evaluated
+refined
+corpus

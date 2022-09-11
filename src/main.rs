@@ -8,10 +8,11 @@ mod penalty;
 mod simulator;
 mod timer;
 mod evaluator;
+mod evaluator_penalty;
 
 use chrono::Utc;
 use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list};
-use evaluator::{evaluate, evaluate_layouts, compare_layouts};
+use evaluator::{evaluate_by_ngram_frequency, evaluate_layouts, compare_layouts};
 use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
 use itertools::Itertools;
@@ -22,8 +23,9 @@ use std::{collections::HashMap, env};
 use timer::{FuncTimer, FuncTimerDisplay, Timer, TimerState};
 
 use crate::corpus_manager::{NgramList, SwapCharList, prepare_ngram_list, save_ngram_list, merge_ngram_lists, read_ngram_list, parse_ngram_list, normalize_ngram_list};
+use crate::evaluator::{refine_evaluation, evaluate_positions};
 use crate::file_manager::{read_text, read_layout, save_benchmark, read_json_evaluated_directory_files};
-use crate::layout::{Layout, NUM_OF_KEYS};
+use crate::layout::{Layout, NUM_OF_KEYS, BASE};
 
 //  made thumbs their own hand,
 //  as they dont really matter from strain perspective when analysing alternation/rolls/etc
@@ -147,7 +149,7 @@ fn main() {
 
     match command.as_ref() {
         "prepare" => prepare(corpus_filename, split_char),
-        //"run" => run(corpus_filename, &layout, debug, top, swaps, load_processed, split_char, ftimer),
+        "run" => run(corpus_filename, &BASE, debug, top, swaps, load_processed, split_char, ftimer),
         "merge" => merge(corpus_filename),
         "parse" => parse(corpus_filename, split_char),
         "normalize" => normalize(corpus_filename, normalize_length),
@@ -155,8 +157,10 @@ fn main() {
         "default" => create_default(corpus_filename),
         "evaluate" => batch_evaluate(corpus_filename, &layout_filename, &dir_filetype_filter, ftimer),
         "compare" => batch_compare(&layout_filename, &dir_filetype_filter, ftimer),
+        "refine-evaluation" => batch_refine(corpus_filename, &layout_filename, &dir_filetype_filter, ftimer),
         "generate" => generate(corpus_filename, normalize_length),
         "run-ref" => run_ref(corpus_filename, split_char, normalize_length),
+        "evaluate-positions" => prebuild_positions(corpus_filename),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
     };
@@ -193,7 +197,7 @@ fn run(
     timer.stop(String::from("read"));
 
     timer.start(String::from("run"));
-    simulator::simulate(&ngram_list, layout, debug, top, swaps, timer);
+    simulator::simulate(ngram_list, layout, debug, top, swaps, timer);
     timer.stop(String::from("run"));
 }
 
@@ -224,7 +228,7 @@ fn parse(
     split_char: String
 ) {
     let corpus= read_text(&filepath);
-    let ngram_list = parse_ngram_list(&corpus.to_string(), &split_char, true, 4);
+    let ngram_list = parse_ngram_list(&corpus.to_string(), &split_char, true, 3);
     save_ngram_list(&filepath, ngram_list);
 }
 
@@ -256,7 +260,7 @@ fn create_default(
     filepath: &String
 ) {
     let ngram_list= read_ngram_list(&filepath);
-    evaluate(ngram_list);
+    evaluate_by_ngram_frequency(ngram_list);
 }
 
 fn batch_evaluate(
@@ -273,11 +277,11 @@ fn batch_evaluate(
     timer.start(String::from("evaluate"));
     let layout_list = evaluate_layouts(existing_ngram_list, layouts, timer);
     timer.stop(String::from("evaluate"));
-    println!("{}", layout_list.len());
-    for entry in layout_list {
-        let folder = String::from("\\evaluated\\");
-        save_small_file::<Vec<BestLayoutsEntry>>(entry.filename, String::from(folder), &entry.data);
-    }
+    // println!("{}", layout_list.len());
+    // for entry in layout_list {
+    //     let folder = String::from("\\evaluated\\");
+    //     save_small_file::<Vec<BestLayoutsEntry>>(entry.filename, String::from(folder), &entry.data);
+    // }
 }
 
 fn batch_compare(
@@ -287,7 +291,7 @@ fn batch_compare(
 ) {
      //cargo run --release --features func_timer -- evaluate count_1w_normalized_3 C:\dev\dactylmanuform\rustkeygen\mykeygen\keygen\evaluation -f ".json"
      println!("{}", layout_filepath);
-    let layouts: Vec<file_manager::FileResult<Vec<BestLayoutsEntry>>> = read_json_evaluated_directory_files(layout_filepath, dir_filetype_filter);
+    let layouts: Vec<file_manager::FileResult<Vec<BestLayoutsEntry>>> = Vec::new();//read_json_evaluated_directory_files(layout_filepath, dir_filetype_filter);
     println!("{}", layouts.len());
     let result = compare_layouts(layouts, timer);
 
@@ -300,6 +304,44 @@ fn batch_compare(
     }
 }
 
+fn batch_refine(
+    corpus_filepath: &String,
+    layout_filepath: &String,
+    dir_filetype_filter: &String,
+    timer: &mut HashMap<String, TimerState>,
+) {
+    //cargo run --release --features func_timer -- evaluate count_1w_normalized_3 C:\dev\dactylmanuform\rustkeygen\mykeygen\keygen\evaluation -f ".json"
+    let existing_ngram_list= read_ngram_list(&corpus_filepath);
+
+    // println!("{}", layout_filepath);
+    // let layouts: Vec<file_manager::FileResult<Vec<BestLayoutsEntry>>> = read_json_evaluated_directory_files(layout_filepath, dir_filetype_filter);
+    // println!("{}", layouts.len());
+    let layout_list = refine_evaluation(existing_ngram_list, layout_filepath, dir_filetype_filter, timer);
+
+    let timestamp = Utc::now().to_string();
+    let timestamp = timestamp.replace(":", "-");
+    let filename = ["refined_batch_time-", &timestamp].join("");
+    let folder = String::from("\\refined\\");
+
+    save_small_file::<Vec<BestLayoutsEntry>>(filename, String::from(folder), &layout_list);
+
+    println!("................................................");
+
+    for entry in layout_list {
+        println!("************************************************");
+        print_result(&entry);
+        println!("************************************************");
+    }
+}
+
+fn prebuild_positions(
+    corpus_filepath: &String
+) {
+    let existing_ngram_list= read_ngram_list(&corpus_filepath);
+
+    evaluate_positions(existing_ngram_list);
+}
+
 pub fn normalize_count(count:usize, len: usize) -> f64{
     return (count as f64) / len as f64;
 }
@@ -310,7 +352,8 @@ pub fn normalize_penalty(penalty:f64, min: f64, range: f64) -> f64{
 
 pub fn print_result<'a>(item: &BestLayoutsEntry) {
     let layout = &item.layout;
-    let total = item.penalty.total;
+    let bad_score_total = item.penalty.bad_score_total;
+    let good_score_total = item.penalty.good_score_total;
     let len = item.penalty.len;
     let penalties = &item.penalty.penalties;
     let penalty = &item.penalty;
@@ -321,7 +364,7 @@ pub fn print_result<'a>(item: &BestLayoutsEntry) {
     let position_penalties = item.penalty.pos_pen;
     let mut position_working = [0; NUM_OF_KEYS];
     position_penalties.into_iter().enumerate().for_each(|(i, penalty)|{
-        position_working[i] = (penalty * 100.0) as u128;
+        position_working[i] = (penalty * 100.0) as i128;
     });
     position_working.sort();
 
@@ -386,9 +429,10 @@ format!(
 		),
         format!("hands: {:<5.3} | {:<5.3}\n", normalize_penalty(hands[0] as f64, 0.0, len as f64), normalize_penalty(hands[1] as f64, 0.0, len as f64)),
         format!(
-            "total: {0:<10.2}; scaled: {1:<10.4}\n",
-            total,
-            total / (len as f64)
+            "bad score total: {0:<10.2}; good score total: {1:<10.2}; bad score scaled: {2:<10.4}\n",
+            bad_score_total,
+            good_score_total,
+            bad_score_total / (len as f64)
         ),
         //format!("base {}\n",penalties[0]),
         format!(
@@ -405,7 +449,7 @@ format!(
                         penalty.name,
                         (100.0 * penalty.times as f64 / (len as f64)),
                         penalty.total / (len as f64),
-                        100.0 * penalty.total / total,
+                        100.0 * penalty.total / bad_score_total,
                         penalty.total
                     )
                 } else {

@@ -39,8 +39,9 @@ pub type FingerMap = [Finger; NUM_OF_KEYS];
 pub type HandMap = [Hand; NUM_OF_KEYS];
 pub type RowMap = [Row; NUM_OF_KEYS];
 pub type CenterMap = [bool; NUM_OF_KEYS];
+pub type PositionMap = [EmptyKeyPress; NUM_OF_KEYS];
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct LayerKeys{
 	#[serde(with = "BigArray")]
     keys: KeyMap,
@@ -69,15 +70,30 @@ impl IndexMut<usize> for LayerKeys {
 }
 
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct Layer(LayerKeys);
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct Layout(Layer, Layer);
+impl Layer {
+	pub fn new(keys: LayerKeys) -> Layer {
+		Layer(keys)
+	}
 
+	pub fn to_string(self) -> String {
+		return String::from_iter(self.0.keys)
+	}
+}
 
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+pub struct Layout(pub Layer, pub Layer);
+
+impl Layout {
+	pub fn new(lower: Layer, upper: Layer) -> Layout {
+		Layout(lower, upper)
+	}
+}
 
 pub struct LayoutPosMap([Option<KeyPress>; 128]);
+pub struct EmptyLayoutPosMap([EmptyKeyPress; NUM_OF_KEYS]);
 
 #[derive(Clone)]
 pub struct LayoutShuffleMask(MaskMap);
@@ -98,11 +114,11 @@ impl Finger {
 	-> usize
 	{
 		match self {
-			Finger::Index => 0,
-			Finger::Middle => 1,
-			Finger::Ring => 2,
-			Finger::Pinky => 3,
-			_ => 4
+			Finger::Index => 1,
+			Finger::Middle => 2,
+			Finger::Ring => 3,
+			Finger::Pinky => 4,
+			_ => 0
 		}
 	}
 }
@@ -177,6 +193,16 @@ pub struct KeyPress
 	pub center: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct EmptyKeyPress
+{
+	pub pos:    usize,
+	pub finger: Finger,
+	pub hand:   Hand,
+	pub row:    Row,
+	pub center: bool,
+}
+
 /* ------- *
 * STATICS *
 * ------- */
@@ -202,31 +228,38 @@ pub const NUM_OF_KEYS: usize = 36;
 // 		 '\0',   '\0',
 // ' ','\0','\0',   '\0', '\0', '\n']);
 
+// v  z     |    q  j
+// c  l  w  | u  o  f
+// n  p  s  t  | a  e  h  d
+// m  b     g  | x     y  k
+// 		|
+//    r    |   i
+
 #[rustfmt::skip]
 pub static BASE: Layout = Layout(
 	Layer(LayerKeys::new([          
-					 'e', 'r', 't',   'y', 'u', 'i', 
-	                 'd', 'f', 'g',   'h', 'j', 'k',
-		        'q', 'w', 'x', 'c',   'n', 'm', 'o', 'p', 
-				'a', 's', 'z', 'v',   'b', ',', '.', 'l', 
+					 'i', 'g', ' ',   ' ', 'a', 'e', 
+	                 'q', 'v', 'y',   'u', 'p', 'o',
+		        'c', 'k', 'w', 'd',   'm', 'b', 'l', 'x', 
+				'n', 'h', ' ', 'f',   's', ' ', 't', 'r', 
 							  '\0',   '\0',
-				     ' ','\0','\0',   '\0', '\0', '\n'])),
+				     ' ','j','\0',   '\0', 'z', '\n'])),
 	Layer(LayerKeys::new([          
-					 'E', 'R', 'T',   'Y', 'U', 'I',
-		             'D', 'F', 'G',   'H', 'J', 'K',
-		        'Q', 'W', 'X', 'C',   'N', 'M', 'O', 'P',
-		        'A', 'S', 'Z', 'V',   'B', '<', '>', 'L',
+					 'I', 'G', ' ',   ' ', 'A', 'E',
+		             'Q', 'V', 'Y',   'U', 'P', 'O',
+		        'C', 'K', 'W', 'D',   'M', 'B', 'L', 'X',
+		        'N', 'H', ' ', 'F',   'S', ' ', 'T', 'R',
                               '\0',   '\0',
-					 ' ','\0','\0',   '\0','\0','\n'])));
+					 ' ','J','\0',   '\0','Z','\n'])));
 
-					 #[rustfmt::skip]
+#[rustfmt::skip]
 pub static SWAPPABLE_MAP: SwapMap= [
-	       true,  true,  true,    true,  true,  true,  
+	       true,  true,  false,   false,  true,  true,  
 	       true,  true,  true,    true,  true,  true,  
 	true,  true,  true,  true,    true,  true,  true,  true,  
-	true,  true,  true,  true,    true,  true,  true,  true,  
+	true,  true,  false,  true,    true,  false,  true,  true,  
 	                    false,    false,
-		false,  false,  false,    false,  false,  false,  
+		false,  true,  false,    false,  true,  false,  
 ];
  
 #[rustfmt::skip]
@@ -353,7 +386,15 @@ impl Layout
 		LayoutPosMap(map)
 	}
 
-	fn  shuffle_position() -> (usize, usize)
+	pub fn get_character_positions(&self) -> KeyMap
+	{
+		let Layout(ref lower, ref upper) = *self;
+		let Layer(ref layerKeys) = *lower;
+
+		layerKeys.keys
+	}
+
+	pub fn shuffle_position() -> (usize, usize)
 	{
 		let mut i = random::<usize>() % NUM_OF_KEYS;
 		let mut j = random::<usize>() % NUM_OF_KEYS;
@@ -368,9 +409,34 @@ impl Layout
 	}
 }
 
+pub fn get_empty_position_map() -> EmptyLayoutPosMap
+{
+	let mut map: PositionMap = [(); NUM_OF_KEYS].map(|_| {
+		EmptyKeyPress {
+			pos: 0,
+			finger: Finger::Index,
+			hand: Hand::Left,
+			row: Row::Bottom,
+			center: false,
+		}
+	});
+
+	for i in 0..NUM_OF_KEYS {
+		map[i] = EmptyKeyPress {
+			pos: i,
+			finger: KEY_FINGERS[i],
+			hand: KEY_HANDS[i],
+			row: KEY_ROWS[i],
+			center: KEY_CENTER_COLUMN[i],
+		};
+	}
+
+	EmptyLayoutPosMap(map)
+}
+
 impl Layer
 {
-	fn swap(&mut self, i: usize, j: usize)
+	pub fn swap(&mut self, i: usize, j: usize)
 	{
 		let Layer(ref mut layer) = *self;
 		let temp = layer[i];
@@ -407,6 +473,16 @@ impl LayoutPosMap
 		} else {
 			&KP_NONE
 		}
+	}
+}
+
+impl EmptyLayoutPosMap
+{
+	pub fn get_key_position(&self, pos: usize)
+	-> &EmptyKeyPress
+	{
+		let EmptyLayoutPosMap(ref map) = *self;
+		&map[pos]
 	}
 }
 

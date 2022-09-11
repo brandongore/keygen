@@ -5,11 +5,12 @@ name = "keygen"
 version = "0.1.0"
 authors = ["Xuming Zeng <xsznix@gmail.com>"]
 edition = "2021"
+rust-version = "1.56.0"
 
 [dependencies]
 rand = "0.7.3"
 getopts = "0.2.21"
-rayon = "1.5.1"
+rayon = "1.5.2"
 num_cpus = "1.13.0"
 quanta = "0.9.3"
 itertools = "0.10.2"
@@ -23,6 +24,10 @@ strum_macros = "0.21"
 phf = { version = "0.10", default-features = false }
 lazy_static = "1.4.0"
 jwalk = "0.6.0"
+hashbrown = { version = "0.12.1", features = ["serde", "rayon"]}
+flurry = "0.4.0"
+dashmap = { version = "5.3.3", features = ["serde", "rayon"]} 
+serde_arrays = "0.1.0"
 
 [profile.dev]
 opt-level = 3
