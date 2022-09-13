@@ -1440,6 +1440,15 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     //     30, 31, 32,     33, 34, 35,
     // ];
 
+    [
+                 "",  "",  "",   "",  "",  "", 
+                "r", "h", "c",   "x", "l", "s", 
+           "k", "t", "o", "u",   "b", "i", "n", "v", 
+           "z", "d", "m", "p",   "",  "g", "y",  "", 
+                          "j",   "", 
+                "f", "e", "q",   "", "a", "w"
+    ];
+
     //println!("types: {:?}", display_pos_relation[0].penalty_types);
     // println!("penalty 1: {:?}", position_penalties[0]);
     // println!("-----------------------------------------");
@@ -1787,35 +1796,144 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     let mut to_key_penalty = [(); layout::NUM_OF_KEYS].map(|_| HashMap::<String, f64>::new());
     let mut combined_key_penalty = [(); layout::NUM_OF_KEYS].map(|_| HashMap::<String, f64>::new());
     // let mut test = [
-    //     dup_map, 
+    //     dup_map,
     //     36
     // ];
 
     for (position, penalty) in bigram_from_penalties.clone().into_iter() {
         for (key, frequency) in unique_from_bigram_letter_frequency_list.clone().into_iter() {
-            let frequency_penalty = penalty * (frequency as f64);
+            let frequency_penalty = penalty * (1.0 / (frequency as f64));
             let from_key_position_penalty = from_key_penalty[position].entry(key).or_insert(0.0);
             *from_key_position_penalty = frequency_penalty;
         }
     }
 
     for (position, penalty) in bigram_to_penalties.clone().into_iter() {
-
         for (key, frequency) in unique_to_bigram_letter_frequency_list.clone().into_iter() {
-            let frequency_penalty = penalty * (frequency as f64);
+            let frequency_penalty = penalty * (1.0 / (frequency as f64));
             let to_key_position_penalty = to_key_penalty[position].entry(key).or_insert(0.0);
             *to_key_position_penalty = frequency_penalty;
         }
     }
 
     for (position, map) in from_key_penalty.into_iter().enumerate() {
+        for (key, mut penalty) in map.clone().into_iter() {
+            let to_key_position_penalty = to_key_penalty[position]
+                .entry(key.clone())
+                .or_insert(0.0);
 
-        for (key, penalty) in map.clone().into_iter() {
+            let combined_key_position_penalty = combined_key_penalty[position]
+                .entry(key)
+                .or_insert(0.0);
+            *combined_key_position_penalty = *to_key_position_penalty + penalty;
             //let frequency_penalty = penalty * (frequency as f64);
             //let to_key_position_penalty = to_key_penalty[position].entry(key).or_insert(0.0);
             //*to_key_position_penalty = frequency_penalty;
         }
     }
+
+    let mut sorted_combined_key_position_penalty = combined_key_penalty
+        .clone()
+        .into_iter()
+        .enumerate()
+        .map(|item| {
+            let mut sorted_items = item.1
+                .clone()
+                .into_iter()
+                .map(|item| (item.0.to_string(), item.1))
+                .collect::<Vec<(String, f64)>>();
+            sorted_items.sort_by(|ngram1, ngram2| ngram1.1.partial_cmp(&ngram2.1).unwrap());
+
+            (item.0, sorted_items)
+        })
+        .collect::<Vec<(usize, Vec<(String, f64)>)>>();
+
+    // sorted_unique_to_bigram_letter_frequency_list.sort_by(|ngram1, ngram2|
+    //     ngram1.1.partial_cmp(&ngram2.1).unwrap().reverse()
+    // );
+
+    // println!("--------------------combined from and to penalty---------------------");
+    // for gram in sorted_combined_key_position_penalty.clone() {
+    //     println!("{:?}", gram);
+    // }
+
+    let mut evaluated_layout = [(); layout::NUM_OF_KEYS].map(|_| "".to_string());
+
+    let mut penalty_list = sorted_combined_key_position_penalty.clone();
+
+    let mut last_lowest_letter = "".to_string();
+    let mut last_lowest_score = f64::MAX;
+    let mut last_lowest_position = 0;
+    let mut last_lowest_index = 0;
+
+    let mut positions_to_remove: Vec<usize> = Vec::new();
+    let mut letters_to_remove: Vec<String> = Vec::new();
+
+    // let initial_penalty = |
+    //     list: Vec<(usize, Vec<(String, f64)>)>,
+    //     position_remove_list: Vec<usize>,
+    //     letter_remove_list: Vec<String>
+    // | -> Vec<(usize, Vec<(String, f64)>)> {
+    //     let updated_list = list
+    //         .clone()
+    //         .into_iter()
+    //         .filter(|(position, _)| { position_remove_list.contains(position) })
+    //         .map(|(position, penalties)| {
+    //             let mut updated_penalties: Vec<(String, f64)> = penalties
+    //                 .clone()
+    //                 .into_iter()
+    //                 .filter(|(letter, _)| { letter_remove_list.contains(&letter.clone()) })
+    //                 .collect::<Vec<(String, f64)>>();
+    //             (position, updated_penalties)
+    //         })
+    //         .collect();
+    //     println!("remove list {:?}", letter_remove_list);
+    //     return updated_list;
+    // };
+
+    for _ in (0..layout::NUM_OF_KEYS).collect::<Vec<usize>>().iter() {
+        let internal_penalty_list = get_penalty_list(
+            penalty_list.clone(),
+            positions_to_remove.clone(),
+            letters_to_remove.clone()
+        );
+
+        let mut last_lowest_letter = "".to_string();
+        let mut last_lowest_score = f64::MAX;
+        let mut last_lowest_position = 0;
+        let mut last_lowest_index = 0;
+
+        if internal_penalty_list.len() > 0 {
+        for (index, (position, letter_penalties)) in internal_penalty_list.clone().into_iter().enumerate() {
+            println!("internal_penalty_list {:?}", internal_penalty_list.clone());
+            if letter_penalties.len() > 0 {
+                if last_lowest_letter == "".to_string() || last_lowest_score > letter_penalties[0].1 {
+                    last_lowest_letter = letter_penalties[0].0.clone();
+                    last_lowest_score = letter_penalties[0].1;
+                    last_lowest_position = position;
+                    last_lowest_index = index;
+                }
+            }
+            else {
+                last_lowest_position = position;
+                last_lowest_letter = "".to_string();
+            }
+        }
+
+        evaluated_layout[last_lowest_position] = last_lowest_letter.clone();
+
+        if last_lowest_letter != "".to_string(){
+            positions_to_remove.push(last_lowest_position.clone());
+            letters_to_remove.push(last_lowest_letter);
+        }
+        }
+    }
+
+    println!("--------------------lowest layout---------------------");
+    println!("{:?}", evaluated_layout);
+    // for gram in evaluated_layout.clone() {
+    //     println!("{:?}", evaluated_layout);
+    // }
 
     // for (position, penalty) in bigram_to_penalties.clone().into_iter() {
     //     let mut last_key_position = 0;
@@ -1873,6 +1991,33 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     // }
     //println!("combinations: {}", perms.combinations(12).count());
     //println!("combinations: {}", combinations.count());
+}
+
+pub fn get_penalty_list(
+    list: Vec<(usize, Vec<(String, f64)>)>,
+    position_remove_list: Vec<usize>,
+    letter_remove_list: Vec<String>
+) -> Vec<(usize, Vec<(String, f64)>)> {
+    //println!("list {:?}", list);
+    println!("position_remove_list {:?}", position_remove_list);
+    println!("letter_remove_list {:?}", letter_remove_list);
+
+
+    let updated_list = list
+        .clone()
+        .into_iter()
+        .filter(|(position, _)| { !position_remove_list.contains(position) })
+        .map(|(position, penalties)| {
+            let mut updated_penalties: Vec<(String, f64)> = penalties
+                .clone()
+                .into_iter()
+                .filter(|(letter, _)| { !letter_remove_list.contains(&letter.clone()) })
+                .collect::<Vec<(String, f64)>>();
+            (position, updated_penalties)
+        })
+        .collect();
+    
+    return updated_list;
 }
 
 pub fn print_relation(relation: DisplayPosRelation) {
