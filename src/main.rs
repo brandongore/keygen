@@ -11,7 +11,7 @@ mod evaluator;
 mod evaluator_penalty;
 
 use chrono::Utc;
-use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list};
+use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list, generate_ngram_relation_list, save_ngram_list_relation_mapping, save_string_list};
 use evaluator::{evaluate_by_ngram_frequency, evaluate_layouts, compare_layouts};
 use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
@@ -249,11 +249,18 @@ fn batch(
     normalize_length: usize
 ) {
     let contents = read_directory_files(filepath, dir_filetype_filter);
-    let ngram_list = batch_parse_ngram_list(contents, &split_char, normalize_length);
+
     let timestamp = Utc::now().to_string();
     let timestamp = &timestamp.replace(":", "").replace(" ", "_")[0..17];
-    let normalized_filename = ["batch","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
-    save_ngram_list(&normalized_filename, ngram_list);
+    let string_list_filename = ["list","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
+    save_string_list(&string_list_filename, contents);
+
+
+    // let ngram_list = batch_parse_ngram_list(contents, &split_char, normalize_length);
+    // let timestamp = Utc::now().to_string();
+    // let timestamp = &timestamp.replace(":", "").replace(" ", "_")[0..17];
+    // let normalized_filename = ["batch","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
+    // save_ngram_list(&normalized_filename, ngram_list);
 }
 
 fn create_default(
@@ -481,9 +488,17 @@ fn generate(
     normalize_length: usize
 ) {
     let corpus= read_json_array_list(&filepath);
-    let ngram_list = generate_ngram_list(corpus, normalize_length);
+
+    let ngram_list = generate_ngram_list(corpus.clone(), normalize_length);
     let processed_filename = [filepath, "_normalized","_", normalize_length.to_string().as_str()].join("");
     save_ngram_list(&processed_filename, ngram_list);
+
+    let timestamp = Utc::now().to_string();
+    let timestamp = timestamp.replace(":", "-");
+
+    let ngram_relation_list = generate_ngram_relation_list(corpus, normalize_length);
+    let processed_filename = [filepath, "_normalized_relation","_", normalize_length.to_string().as_str(), "-", &timestamp].join("");
+    save_ngram_list_relation_mapping(&processed_filename, ngram_relation_list);
 }
 
 fn run_ref(
@@ -491,22 +506,36 @@ fn run_ref(
     split_char: String,
     normalize_length: usize 
 ){
-    let corpus = read_text(&filepath.to_string());
-	let run_ref_ = |ngrams|{  // making typechecker happy
+    //let corpus = read_text(&filepath.to_string());
+	// let run_ref_ = |ngrams|{  // making typechecker happy
 
-		let ref_test = |s:&str, l:&layout::Layout|{
-			println!("Reference: {}", s);
-			let init_pos_map = l.get_position_map();
-			// let penalty= penalty::calculate_penalty(ngrams, &l);
-			// simulator::print_result(&penalty);
-			println!("");
-		};
-		ref_test("BASE", &layout::BASE);
-	};
+	// 	let ref_test = |s:&str, l:&layout::Layout|{
+	// 		println!("Reference: {}", s);
+	// 		let init_pos_map = l.get_position_map();
+	// 		let penalty= penalty::calculate_penalty(ngrams, &l);
+	// 		 simulator::print_result(&penalty);
+	// 		//println!("");
+	// 	};
+	// 	ref_test("BASE", &layout::BASE);
+	// };
 
-    let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
+    // let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
 
-    run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
+    let existing_ngram_list= read_ngram_list(&filepath.to_string());
+
+    let processed_ngrams: Vec<(Vec<char>, usize)> = existing_ngram_list.map
+        .into_iter()
+        .map(|item| (item.0.chars().collect(), item.1))
+        .collect();
+
+        let layout_string = "gzv  xdncheawtlsrioupbmfqykj        ".to_string();
+        //let layout = Layout::from_lower_string(&layout_string[..]); 
+
+        let layout = layout::BASE;
+
+        let best_layout = penalty::calculate_penalty(&processed_ngrams, &layout);
+        simulator::print_result(&best_layout);
+    //run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
 
 	// match  quartads {
 	// 	Some(quartads) => run_ref_(quartads),

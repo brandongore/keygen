@@ -1,8 +1,4 @@
-use crate::{
-    corpus_manager::NgramList,
-    layout,
-    timer::{Timer, TimerState},
-};
+use crate::{ corpus_manager::NgramList, layout, timer::{ Timer, TimerState } };
 use flurry::*;
 use layout::*;
 use lazy_static::lazy_static;
@@ -12,11 +8,11 @@ use std::fmt;
 /// corpus string.
 //use layout;
 use std::vec::Vec;
-use std::{self, sync::Arc};
+use std::{ self, sync::Arc };
 
 use quanta::Clock;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use serde::{Deserialize, Serialize};
+use rayon::iter::{ IntoParallelIterator, IntoParallelRefIterator, ParallelIterator };
+use serde::{ Deserialize, Serialize };
 
 use serde_big_array::big_array;
 
@@ -136,7 +132,7 @@ pub struct KeyPenalty {
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Penalty {
-    pub penalties: [KeyPenalty; 17],
+    pub penalties: [KeyPenalty; 21],
     #[serde(with = "BigArray")]
     pub pos: [usize; layout::NUM_OF_KEYS],
     #[serde(with = "BigArray")]
@@ -150,9 +146,8 @@ pub struct Penalty {
 }
 
 lazy_static! {
-    pub static ref PENALTY_LIST: [KeyPenalty; 17] = {
-        PenaltyDescriptions
-            .into_iter()
+    pub static ref PENALTY_LIST: [KeyPenalty; 21] = {
+        PenaltyDescriptions.into_iter()
             .map(|desc| KeyPenalty {
                 name: desc.name.to_string(),
                 show: desc.show,
@@ -191,37 +186,35 @@ impl Penalty {
 }
 
 pub fn better_than_average_including_bad(first: &Penalty, second: &Penalty) -> bool {
-    first.total < second.total
-        && first.bad_score_total < second.bad_score_total
-        && better_than_other(first, second)
+    first.total < second.total &&
+        first.bad_score_total < second.bad_score_total &&
+        better_than_other(first, second)
 }
 
 pub fn better_than_other(first: &Penalty, second: &Penalty) -> bool {
-    first.penalties[1].total < second.penalties[1].total
-    && first.penalties[2].total < second.penalties[2].total
-    && first.penalties[3].total < second.penalties[3].total
-    && first.penalties[4].total < second.penalties[4].total
-    && first.penalties[5].total < second.penalties[5].total
-    && first.penalties[6].total < second.penalties[6].total
-    && first.penalties[7].total < second.penalties[7].total
-    && first.penalties[9].total < second.penalties[9].total
-    && first.penalties[11].total < second.penalties[11].total
-    && first.penalties[12].total < second.penalties[12].total
-    && first.penalties[15].total < second.penalties[15].total
-    && first.penalties[16].total < second.penalties[16].total
+    first.penalties[1].total < second.penalties[1].total &&
+        first.penalties[2].total < second.penalties[2].total &&
+        first.penalties[3].total < second.penalties[3].total &&
+        first.penalties[4].total < second.penalties[4].total &&
+        first.penalties[5].total < second.penalties[5].total &&
+        first.penalties[6].total < second.penalties[6].total &&
+        first.penalties[7].total < second.penalties[7].total &&
+        first.penalties[9].total < second.penalties[9].total &&
+        first.penalties[11].total < second.penalties[11].total &&
+        first.penalties[12].total < second.penalties[12].total &&
+        first.penalties[15].total < second.penalties[15].total &&
+        first.penalties[16].total < second.penalties[16].total
 }
 
 pub fn better_than_average(first: &Penalty, second: &Penalty) -> bool {
-    first
-        .penalties
+    first.penalties
         .to_vec()
         .into_iter()
         .zip(second.penalties.to_vec().into_iter())
         .map(|(first_penalty, second_penalty)| first_penalty.total <= second_penalty.total)
-        .filter(|item| (*item))
-        .count()
-        > ((first.penalties.len() as f64 * 0.4) as usize)
-        && first.penalties[1].total <= second.penalties[1].total
+        .filter(|item| *item)
+        .count() > (((first.penalties.len() as f64) * 0.4) as usize) &&
+        first.penalties[1].total <= second.penalties[1].total
 }
 
 pub fn secondary_compare(first: &Penalty, second: &Penalty) -> bool {
@@ -272,11 +265,7 @@ pub fn above_average_ordering(first: &Penalty, second: &Penalty) -> Option<Order
 impl fmt::Display for Penalty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let penalty = self;
-        write!(
-            f,
-            "{:?} {:?} {:?}",
-            penalty.fingers, penalty.hands, penalty.bad_score_total
-        )
+        write!(f, "{:?} {:?} {:?}", penalty.fingers, penalty.hands, penalty.bad_score_total)
     }
 }
 
@@ -290,13 +279,15 @@ fn chain_partial_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Option<
 
 fn chain_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Ordering {
     match o1 {
-        Some(ord) => match ord {
-            Ordering::Equal => match o2 {
-                Some(ord) => ord,
-                None => Ordering::Equal,
-            },
-            _ => ord,
-        },
+        Some(ord) =>
+            match ord {
+                Ordering::Equal =>
+                    match o2 {
+                        Some(ord) => ord,
+                        None => Ordering::Equal,
+                    }
+                _ => ord,
+            }
         None => Ordering::Equal,
     }
 }
@@ -330,10 +321,7 @@ pub struct BestLayoutsEntry {
 // }
 impl Ord for BestLayoutsEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.penalty
-            .total
-            .partial_cmp(&other.penalty.total)
-            .unwrap()
+        self.penalty.total.partial_cmp(&other.penalty.total).unwrap()
         // chain_ordering(
         //     self.penalty
         //     .total
@@ -351,8 +339,8 @@ impl Ord for BestLayoutsEntry {
 }
 impl PartialEq for BestLayoutsEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.penalty.bad_score_total == other.penalty.bad_score_total
-            && self.penalty.good_score_total == other.penalty.good_score_total
+        self.penalty.bad_score_total == other.penalty.bad_score_total &&
+            self.penalty.good_score_total == other.penalty.good_score_total
     }
 }
 impl Eq for BestLayoutsEntry {}
@@ -413,7 +401,7 @@ pub static BASE_PENALTY: PenaltyMap = [
          4.0, 0.2, 5.0,     5.0, 0.25, 4.0,
 ];
 
-static PenaltyDescriptions: [KeyPenaltyDescription; 17] = [
+static PenaltyDescriptions: [KeyPenaltyDescription; 21] = [
     // Base penalty.
     KeyPenaltyDescription {
         name: "Base",
@@ -508,11 +496,31 @@ static PenaltyDescriptions: [KeyPenaltyDescription; 17] = [
         name: "roll in bad",
         show: true,
     },
+    //17
+    KeyPenaltyDescription {
+        name: "unbalanced fingers",
+        show: true,
+    },
+    //18
+    KeyPenaltyDescription {
+        name: "unbalance hand",
+        show: true,
+    },
+    //19
+    KeyPenaltyDescription {
+        name: "right hand reduction",
+        show: true,
+    },
+    //19
+    KeyPenaltyDescription {
+        name: "bad hand swap",
+        show: true,
+    },
 ];
 
 pub fn calculate_penalty<'a>(
     quartads: &Vec<(Vec<char>, usize)>,
-    layout: &Layout,
+    layout: &Layout
 ) -> BestLayoutsEntry {
     let mut result = Penalty::new();
 
@@ -677,7 +685,7 @@ fn run_penalty_calculation(
     count: &usize,
     result: Penalty,
     position_map: LayoutPosMap,
-    timer: &mut std::collections::HashMap<String, TimerState>,
+    timer: &mut std::collections::HashMap<String, TimerState>
 ) -> Penalty {
     let trigram1 = &string[0..2];
     let trigram2 = &string[1..3];
@@ -690,13 +698,25 @@ fn run_penalty_calculation(
 
 fn use_finger(kp: &KeyPress, count: &usize, result: &mut Penalty, i: usize) {
     match kp.finger {
-        Finger::Pinky => result.fingers[i] += count,
-        Finger::Ring => result.fingers[i + 1] += count,
-        Finger::Middle => result.fingers[i + 2] += count,
-        Finger::Index => result.fingers[i + 3] += count,
-        Finger::Thumb => result.fingers[i + 4] += count,
-        Finger::ThumbBottom => result.fingers[i + 4] += count,
-    };
+        Finger::Pinky => {
+            result.fingers[i] += count;
+        }
+        Finger::Ring => {
+            result.fingers[i + 1] += count;
+        }
+        Finger::Middle => {
+            result.fingers[i + 2] += count;
+        }
+        Finger::Index => {
+            result.fingers[i + 3] += count;
+        }
+        Finger::Thumb => {
+            result.fingers[i + 4] += count;
+        }
+        Finger::ThumbBottom => {
+            result.fingers[i + 4] += count;
+        }
+    }
 }
 
 pub fn update_hand(kp: &KeyPress, count: &usize, result: &mut Penalty) {
@@ -732,13 +752,10 @@ pub fn log_same_finger_penalty(
     prev: &KeyPress,
     curr: &KeyPress,
     count: &usize,
-    result: &mut Penalty,
+    result: &mut Penalty
 ) {
     //sfb
-    let penalty = match (
-        curr.finger.index() == prev.finger.index(),
-        curr.pos != prev.pos,
-    ) {
+    let penalty = match (curr.finger.index() == prev.finger.index(), curr.pos != prev.pos) {
         (true, true) => 10.0,
         _ => 0.0,
         //let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
@@ -784,18 +801,20 @@ pub fn evaluate_trigram_penalties(
     second: &KeyPress,
     third: &KeyPress,
     count: &usize,
-    result: &mut Penalty,
+    result: &mut Penalty
 ) {
     if first.hand == second.hand && second.hand == third.hand {
         // 6: Roll reversal.
-        let penalty_reversal = match (
-            third.finger.index() < first.finger.index(),
-            first.finger.index() < second.finger.index(),
-            third.finger.index() < second.finger.index(),
-            third.finger == Finger::Pinky,
-            third.finger == Finger::Thumb || third.finger == Finger::ThumbBottom,
-            first.finger == third.finger,
-        ) {
+        let penalty_reversal = match
+            (
+                third.finger.index() < first.finger.index(),
+                first.finger.index() < second.finger.index(),
+                third.finger.index() < second.finger.index(),
+                third.finger == Finger::Pinky,
+                third.finger == Finger::Thumb || third.finger == Finger::ThumbBottom,
+                first.finger == third.finger,
+            )
+        {
             //rollback out in
             (true, true, true, false, false, false) => 6.0,
             //rollback in out wide pinky
@@ -828,16 +847,18 @@ pub fn evaluate_trigram_penalties(
         }
 
         // 12: Twist.
-        let penalty_twist = match (
-            first.row.index() > second.row.index(),
-            second.row.index() > third.row.index(),
-            first.row.index() != second.row.index(),
-            second.row.index() != third.row.index(),
-            first.finger.index() != second.finger.index(),
-            second.finger.index() != third.finger.index(),
-            first.finger.index() != third.finger.index(),
-            second.row.difference(first.row) > 1 || third.row.difference(second.row) > 1,
-        ) {
+        let penalty_twist = match
+            (
+                first.row.index() > second.row.index(),
+                second.row.index() > third.row.index(),
+                first.row.index() != second.row.index(),
+                second.row.index() != third.row.index(),
+                first.finger.index() != second.finger.index(),
+                second.finger.index() != third.finger.index(),
+                first.finger.index() != third.finger.index(),
+                second.row.difference(first.row) > 1 || third.row.difference(second.row) > 1,
+            )
+        {
             (true, true, true, true, true, true, true, false) => 4.0,
             (false, false, true, true, true, true, true, false) => 4.0,
             (true, true, true, true, true, true, true, true) => 7.0,
@@ -849,13 +870,15 @@ pub fn evaluate_trigram_penalties(
         }
 
         //15 same finger trigram
-        let penalty_trigram = match (
-            first.finger == second.finger,
-            second.finger == third.finger,
-            first.pos != second.pos,
-            second.pos != third.pos,
-            third.pos != first.pos,
-        ) {
+        let penalty_trigram = match
+            (
+                first.finger == second.finger,
+                second.finger == third.finger,
+                first.pos != second.pos,
+                second.pos != third.pos,
+                third.pos != first.pos,
+            )
+        {
             (true, true, true, true, true) => 5.0,
             (true, true, true, true, false) => 5.0,
             (true, true, true, false, true) => 5.0,
@@ -866,31 +889,21 @@ pub fn evaluate_trigram_penalties(
         if penalty_trigram > 0.0 {
             log_penalty(15, penalty_trigram, count, result);
         }
-        update_position_penalty(
-            first,
-            penalty_reversal + penalty_twist + penalty_trigram,
-            result,
-        );
-        update_position_penalty(
-            second,
-            penalty_reversal + penalty_twist + penalty_trigram,
-            result,
-        );
-        update_position_penalty(
-            third,
-            penalty_reversal + penalty_twist + penalty_trigram,
-            result,
-        );
+        update_position_penalty(first, penalty_reversal + penalty_twist + penalty_trigram, result);
+        update_position_penalty(second, penalty_reversal + penalty_twist + penalty_trigram, result);
+        update_position_penalty(third, penalty_reversal + penalty_twist + penalty_trigram, result);
     }
 
     // 11: Long jump sandwich. dsfb
-    let penalty_sandwich = match (
-        third.hand == first.hand,
-        third.finger == first.finger,
-        third.row.index() > first.row.index(),
-        third.row.index() < first.row.index(),
-        third.row.difference(first.row) > 1,
-    ) {
+    let penalty_sandwich = match
+        (
+            third.hand == first.hand,
+            third.finger == first.finger,
+            third.row.index() > first.row.index(),
+            third.row.index() < first.row.index(),
+            third.row.difference(first.row) > 1,
+        )
+    {
         (true, true, true, false, true) => 3.0,
         (true, true, false, true, true) => 3.0,
         _ => 0.0,
@@ -901,17 +914,40 @@ pub fn evaluate_trigram_penalties(
     update_position_penalty(first, penalty_sandwich, result);
     update_position_penalty(second, penalty_sandwich, result);
     update_position_penalty(third, penalty_sandwich, result);
+
+            // 20: Bad hand swap
+            let penalty_bad_hand_swap = match
+            (
+                first.hand == second.hand,
+                second.hand == third.hand,
+                third.hand == first.hand
+            )
+        {
+            (false, true, false) => {
+                5.0
+            },
+            (false, false, false) => {
+                9.0
+            },
+            _ => 0.0,
+        };
+        if penalty_bad_hand_swap > 0.0 {
+            log_penalty(20, penalty_bad_hand_swap, count, result);
+            update_position_penalty(first, penalty_bad_hand_swap, result);
+            update_position_penalty(second, penalty_bad_hand_swap, result);
+            update_position_penalty(third, penalty_bad_hand_swap, result);
+        }
 }
 
 pub fn evaluate_different_hand_penalties(
     prev: &KeyPress,
     curr: &KeyPress,
     count: &usize,
-    result: &mut Penalty,
+    result: &mut Penalty
 ) {
     if prev.hand != curr.hand {
         //8: Alternation
-        let penalty = -0.4;
+        let penalty = -0.1;
         log_penalty(8, penalty, count, result);
         update_position_penalty(prev, penalty, result);
         update_position_penalty(curr, penalty, result);
@@ -922,7 +958,7 @@ pub fn evaluate_same_hand_penalties(
     prev: &KeyPress,
     curr: &KeyPress,
     count: &usize,
-    result: &mut Penalty,
+    result: &mut Penalty
 ) {
     match prev.hand == curr.hand {
         true => {
@@ -977,10 +1013,12 @@ pub fn evaluate_same_hand_penalties(
 }
 
 pub fn right_hand_reduction_penalty(result: &mut Penalty) {
-    let base_factor = 1.0/16.0;
+    let base_factor = 1.0 / 16.0;
     let penalty_right_hand = base_factor * result.bad_score_total;
-    if result.hands[0] as f64 * 100.0 < result.hands[1] as f64 * 100.0 {
-        result.bad_score_total += penalty_right_hand;
+    if (result.hands[0] as f64) * 100.0 < (result.hands[1] as f64) * 100.0 {
+        if penalty_right_hand > 0.0 {
+            log_penalty(19, penalty_right_hand, &1, result);
+        }
     }
 }
 
@@ -988,17 +1026,19 @@ pub fn evaluate_unbalanced_hand_penalty(result: &mut Penalty) {
     let mut unbalanced_penalty = 0.0;
     let mut sum = 0.0;
     for index in 0..2 {
-        sum += (result.hands[index] as f64 * 100.0 / result.len as f64);
+        sum += ((result.hands[index] as f64) * 100.0) / (result.len as f64);
     }
-    let mean = sum / 2.0 as f64;
-    let base_factor = 1.0 / 2.0 as f64 * 1.0/16.0;
+    let mean = sum / (2.0 as f64);
+    let base_factor = ((1.0 / (2.0 as f64)) * 1.0) / 16.0;
     for index in 0..2 {
         unbalanced_penalty +=
-            ((((result.hands[index] as f64 * 100.0 / result.len as f64) - mean).abs()).powf(3.0)
-                * base_factor)
-                * result.bad_score_total;
+            (((result.hands[index] as f64) * 100.0) / (result.len as f64) - mean).abs().powf(3.0) *
+            base_factor *
+            result.bad_score_total;
     }
-    result.bad_score_total += unbalanced_penalty;
+    if unbalanced_penalty > 0.0 {
+        log_penalty(18, unbalanced_penalty, &1, result);
+    }
 }
 
 pub fn evaluate_unbalanced_finger_penalty(result: &mut Penalty) {
@@ -1006,21 +1046,25 @@ pub fn evaluate_unbalanced_finger_penalty(result: &mut Penalty) {
     let finger_count = result.fingers.len() / 2;
     let mut sum = 0.0;
     for index in 0..finger_count {
-        sum += (result.fingers[index] as f64 * 100.0 / result.len as f64);
+        sum += ((result.fingers[index] as f64) * 100.0) / (result.len as f64);
     }
-    let mean = sum / finger_count as f64;
-    let base_factor = 1.0 / finger_count as f64 * 0.8/16.0;
+    let mean = sum / (finger_count as f64);
+    let base_factor = ((1.0 / (finger_count as f64)) * 0.8) / 16.0;
     for index in 0..finger_count {
         unbalanced_penalty +=
-            ((((result.fingers[index] as f64 * 100.0 / result.len as f64) - mean).abs()).powf(3.0)
-                * base_factor)
-                * result.bad_score_total;
+            (((result.fingers[index] as f64) * 100.0) / (result.len as f64) - mean)
+                .abs()
+                .powf(3.0) *
+            base_factor *
+            result.bad_score_total;
     }
-    result.bad_score_total += unbalanced_penalty;
+    if unbalanced_penalty > 0.0 {
+        log_penalty(17, unbalanced_penalty, &1, result);
+    }
 }
 
 pub fn log_penalty(i: usize, penalty: f64, count: &usize, result: &mut Penalty) {
-    let p = penalty * *count as f64;
+    let p = penalty * (*count as f64);
     match penalty {
         d if d < 0.0 => {
             //println!("{}; {}", i, penalty);
@@ -1035,7 +1079,7 @@ pub fn log_penalty(i: usize, penalty: f64, count: &usize, result: &mut Penalty) 
             result.bad_score_total += p;
         }
         _ => (),
-    };
+    }
     result.total += p;
     // if penalty.abs() > 0.0 {
     // let p = penalty * *count as f64;
@@ -1050,7 +1094,7 @@ pub fn log_long_jump_consecutive(
     prev: &KeyPress,
     curr: &KeyPress,
     count: &usize,
-    result: &mut Penalty,
+    result: &mut Penalty
 ) {
     let penalty = match (prev.finger != curr.finger, curr.row.difference(prev.row)) {
         (true, 2) => 3.0,
@@ -1090,10 +1134,7 @@ pub fn log_pinky_ring_twist(prev: &KeyPress, curr: &KeyPress, count: &usize, res
 }
 
 pub fn log_roll_out(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
-    let penalty = match (
-        prev.finger.index() < curr.finger.index(),
-        curr.row.difference(prev.row),
-    ) {
+    let penalty = match (prev.finger.index() < curr.finger.index(), curr.row.difference(prev.row)) {
         (true, 0) => {
             log_penalty(9, 4.0, count, result);
             4.0
@@ -1123,10 +1164,7 @@ pub fn log_roll_out(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mu
 }
 
 pub fn log_roll_in(prev: &KeyPress, curr: &KeyPress, count: &usize, result: &mut Penalty) {
-    let penalty = match (
-        prev.finger.index() > curr.finger.index(),
-        curr.row.difference(prev.row),
-    ) {
+    let penalty = match (prev.finger.index() > curr.finger.index(), curr.row.difference(prev.row)) {
         (true, 0) => {
             log_penalty(10, -6.5, count, result);
             -6.5

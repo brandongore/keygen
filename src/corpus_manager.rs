@@ -2,7 +2,7 @@ use crate::file_manager::*;
 use chrono::{ DateTime, Utc };
 use itertools::Itertools;
 use serde::{ de::{ MapAccess, SeqAccess }, Deserialize, Serialize };
-use std::{ collections::HashMap, fmt };
+use std::{ collections::HashMap, fmt, hash::Hash };
 
 use serde::de::{ Deserializer, Error, Visitor };
 use serde_json::{ Map, Value };
@@ -10,6 +10,19 @@ use serde_json::{ Map, Value };
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NgramList {
     pub map: HashMap<String, usize>,
+    pub gram: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NgramListRelation {
+    pub ngram: String,
+    pub frequency: usize,
+    pub after_map: NgramList,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NgramListRelationMapping {
+    pub ngrams: HashMap<String, NgramListRelation>,
     pub gram: usize,
 }
 
@@ -46,6 +59,173 @@ impl FromIterator<NgramList> for NgramList {
             }
         }
         ngram_list
+    }
+}
+
+impl NgramListRelation {
+    fn new(ngram: String, frequency: usize) -> NgramListRelation {
+        let mut ngram_list = NgramList::new();
+        NgramListRelation {
+            ngram: ngram,
+            frequency: frequency,
+            after_map: ngram_list,
+        }
+    }
+}
+
+impl NgramListRelationMapping {
+    fn new() -> NgramListRelationMapping {
+        let mut ngram_list: HashMap<String, NgramListRelation> = HashMap::new();
+
+        NgramListRelationMapping {
+            ngrams: ngram_list,
+            gram: 0,
+        }
+    }
+
+    fn add(&mut self, ngram: String) {
+        let mut padded_ngram = ngram.clone();
+        let length: usize = 3;
+        if padded_ngram.len() < 3 {
+            //this could swap counts more to space character
+            let slice = format!("{:<length$}", &ngram.to_lowercase());
+            padded_ngram = slice;
+        }
+
+        let mut ngram_tuples = padded_ngram.chars().tuple_windows::<(_, _, _)>();
+
+        let mut ngram_list: Vec<String> = Vec::new();
+
+        //(t,h,e), (h,e,r), (e,r,e), (r,e,' '), (e,'',i),('',i,s), (i,s,'')
+        //"there is"
+
+        for item in ngram_tuples.clone() {
+            let ngram = format!("{}{}{}", item.0, item.1, item.2);
+            //println!("ngram {} ({}{}{}) {}{}{}",ngram, item.0, item.1, item.2, item.0 as i32, item.1 as i32, item.2 as i32);
+            if (item.0 as i32) != 32 || (item.1 as i32) != 32 || (item.2 as i32) != 32 {
+                if
+                    ngram
+                        .chars()
+                        .all(
+                            |c|
+                                ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                (c as i32) == 32
+                        )
+                {
+                    ngram_list.push(ngram.to_lowercase());
+                } else {
+                    ngram_list.push(ngram);
+                }
+            }
+            // println!("chars {:?}", ngram.chars().into_iter().map(|chars| chars as i32).collect::<Vec<i32>>());
+        }
+
+        if ngram_list.len() > 0 {
+            let last_ngram = ngram_list
+                .last()
+                .unwrap()
+                .chars()
+                .collect_tuple::<(_, _, _)>()
+                .unwrap();
+
+            if
+                !ngram_list
+                    .last()
+                    .unwrap()
+                    .chars()
+                    .all(|c| (c as i32) != 32)
+            {
+                ngram_list.push(format!("{}{}{}", last_ngram.1, last_ngram.2, ' '));
+            }
+
+            for (index, ngram) in ngram_list.clone().into_iter().enumerate() {
+                if
+                    ngram
+                        .chars()
+                        .all(
+                            |c|
+                                ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                (c as i32) == 32
+                        )
+                {
+                    let entry = self.ngrams.entry(ngram.clone()).or_insert(NgramListRelation {
+                        ngram: ngram.clone(),
+                        frequency: 0,
+                        after_map: NgramList::new(),
+                    });
+                    entry.frequency += 1;
+
+                    let next_index = index + 2; // plus one means its follow, could be an option
+                    if next_index < ngram_list.clone().len() - 1 {
+                        let next_ngram = ngram_list[next_index].clone();
+
+                        if
+                            next_ngram
+                                .chars()
+                                .all(
+                                    |c|
+                                        ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                        ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                        (c as i32) == 32
+                                )
+                        {
+                            let after_entry = entry.after_map.map.entry(next_ngram).or_insert(0);
+                            *after_entry += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // for (key, val) in ngram_list.map {
+        //     let after_map_entry = entry.after_map.map.entry(key).or_insert(0);
+        //     *after_map_entry += val;
+
+        //     // if key.len() >= length {
+        //     //     for j in 0..key.chars().count() - length {
+        //     //         let slice = &key[j..j + length];
+        //     //         if slice.chars().all(|c| (c as i32) <= 128) {
+        //     //             let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+        //     //             *entry += val;
+        //     //         }
+        //     //     }
+        //     // } else {
+        //     //     count_missed += 1;
+        //     // }
+        // }
+
+        //     let after_map_entry = entry.after_map.map.entry(key).or_insert(NgramList {
+        //         ngram: ngram,
+        //         frequency: frequency,
+        //         after_map: ngram_list,
+
+        // }
+    }
+
+    fn remove_non_alpha(&mut self) {
+        let alpha: Vec<String> = self.ngrams
+            .clone()
+            .into_iter()
+            .filter(|item| {
+                item.0
+                    .chars()
+                    .any(
+                        |c|
+                            !(
+                                ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                (c as i32) == 32
+                            )
+                    )
+            })
+            .map(|(key, _)| key)
+            .collect::<Vec<String>>();
+
+        alpha.iter().for_each(|ngram| {
+            self.ngrams.remove(ngram);
+        });
     }
 }
 
@@ -106,23 +286,25 @@ pub fn prepare_ngram_list(
 
 pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
+    //missing hundreds of items, eg iff 475 output 561 in base
 
     for item in corpus {
         if item.chars().all(|c| (c as i32) <= 128) {
             if item.chars().count() < length {
-                let slice = format!("{}{:<indent$}", &item.to_lowercase(), indent=length);
-                    if
-                        slice
-                            .chars()
-                            .all(
-                                |c|
-                                    ((c as i32) >= 65 && (c as i32) <= 90) ||
-                                    ((c as i32) >= 97 && (c as i32) <= 122)
-                            )
-                    {
-                        let entry = ngram_list.entry(slice.to_string()).or_insert(0);
-                        *entry += 1;
-                    }
+                let slice = format!("{}{:<indent$}", &item.to_lowercase(), indent = length);
+                if
+                    slice
+                        .chars()
+                        .all(
+                            |c|
+                                ((c as i32) >= 65 && (c as i32) <= 90) ||
+                                ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                (c as i32) == 32
+                        )
+                {
+                    let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+                    *entry += 1;
+                }
             } else {
                 for i in 0..item.chars().count() - length {
                     let slice = &item.to_lowercase()[i..i + length];
@@ -132,7 +314,8 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
                             .all(
                                 |c|
                                     ((c as i32) >= 65 && (c as i32) <= 90) ||
-                                    ((c as i32) >= 97 && (c as i32) <= 122)
+                                    ((c as i32) >= 97 && (c as i32) <= 122) ||
+                                    (c as i32) == 32
                             )
                     {
                         let entry = ngram_list.entry(slice.to_string()).or_insert(0);
@@ -149,9 +332,224 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
     }
 }
 
+pub fn generate_ngram_relation_list(
+    corpus: Vec<String>,
+    length: usize
+) -> NgramListRelationMapping {
+    let mut ngram_relation_mapping: NgramListRelationMapping = NgramListRelationMapping::new();
+    //missing hundreds of items, eg iff 475 output 561 in base
+
+    for item in corpus {
+        //if item.chars().all(|c| (c as i32) <= 128) {
+        if item.chars().count() < length {
+            let slice = format!("{}{:<indent$}", &item, indent = length);
+            if
+                slice
+                    .chars()
+                    .all(
+                        |c|
+                            ((c as i32) >= 65 && (c as i32) <= 90) ||
+                            ((c as i32) >= 97 && (c as i32) <= 122) ||
+                            (c as i32) == 32
+                    )
+            {
+                //println!("slice {}", slice);
+                ngram_relation_mapping.add(slice.to_lowercase());
+                // let entry = ngram_relation_mapping.ngrams
+                //     .entry(slice.to_string())
+                //     .or_insert(NgramListRelation {
+                //         ngram: slice.to_string(),
+                //         frequency: 1,
+                //         after_map: NgramList::new(),
+                //     });
+            }
+            // else{
+            //     ngram_relation_mapping.add(slice);
+            // }
+        } else {
+            let slice = item.to_string();
+
+            // let character_penalty_groups: Vec<&str> = slice.
+            // .par_iter()
+            // .map(|penalty_map| {
+            //     let mut character_penalties: Vec<(char, u128)> = penalty_map
+            //         .iter_mut()
+            //         .map(|item| (*item.key(), (item.value() * 100.0) as u128))
+            //         .collect::<Vec<(char, u128)>>();
+
+            //     character_penalties.sort_by(|first, second| first.1.cmp(&second.1));
+
+            //     save_penalty.insert(*penalty_map.key(), character_penalties.clone());
+
+            //     if character_penalties.len() >= 3 {
+            //         character_penalties
+            //         .drain(0..3)
+            //         .map(|(character, _)| (character, *penalty_map.key()))
+            //         .collect::<Vec<(char, usize)>>()
+            //     }
+            //     else {
+            //         character_penalties
+            //         .into_iter()
+            //         .map(|(character, _)| (character, *penalty_map.key()))
+            //         .collect::<Vec<(char, usize)>>()
+            //     }
+
+            // })
+            // .collect();
+
+            ngram_relation_mapping.add(slice);
+
+            // for i in 0..slice.chars().count() - length {
+
+            //     let ngram = &item.to_lowercase()[i..i + length];
+
+            //     if
+            //     ngram
+            //         .chars()
+            //         .all(
+            //             |c|
+            //                 ((c as i32) >= 65 && (c as i32) <= 90) ||
+            //                 ((c as i32) >= 97 && (c as i32) <= 122) ||
+            //                 (c as i32) == 32
+            //         )
+            //     {
+            //         println!("slice {}", ngram);
+            //         ngram_relation_mapping.add(ngram.to_lowercase());
+            //     }
+            // }
+
+            // else{
+            //     ngram_relation_mapping.add(slice);
+            // }
+            // let mut test = item.chars().tuple_windows::<(_, _, _)>();
+            // let ngram = test.next().unwrap();
+            // let mut start= format!("{}{}{}", ngram.0,ngram.0,ngram.0);
+
+            // for relation in test.enumerate() {
+
+            // }
+
+            // for i in 0..item.chars().count() - length {
+            //     let slice = &item.to_lowercase()[i..i + length];
+            //     if
+            //         slice
+            //             .chars()
+            //             .all(
+            //                 |c|
+            //                     ((c as i32) >= 65 && (c as i32) <= 90) ||
+            //                     ((c as i32) >= 97 && (c as i32) <= 122) ||
+            //                     (c as i32) == 32
+            //             )
+            //     {
+            //         let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+            //         *entry += 1;
+            //     }
+            // }
+        }
+        //}
+    }
+
+    //ngram_relation_mapping.remove_non_alpha();
+
+    return ngram_relation_mapping;
+}
+
+//THE OG GENERATE WITHOUT CHANGES FOR CODING CHARACTERS
+// pub fn generate_ngram_relation_list(
+//     corpus: Vec<String>,
+//     length: usize
+// ) -> NgramListRelationMapping {
+//     let mut ngram_relation_mapping: NgramListRelationMapping = NgramListRelationMapping::new();
+//     //missing hundreds of items, eg iff 475 output 561 in base
+
+//     for item in corpus {
+//         if item.chars().all(|c| (c as i32) <= 128) {
+//             if item.chars().count() < length {
+//                 let slice = format!("{}{:<indent$}", &item.to_lowercase(), indent = length);
+//                 if
+//                     slice
+//                         .chars()
+//                         .all(
+//                             |c|
+//                                 ((c as i32) >= 65 && (c as i32) <= 90) ||
+//                                 ((c as i32) >= 97 && (c as i32) <= 122) ||
+//                                 (c as i32) == 32
+//                         )
+//                 {
+//                     ngram_relation_mapping.add(slice);
+//                     // let entry = ngram_relation_mapping.ngrams
+//                     //     .entry(slice.to_string())
+//                     //     .or_insert(NgramListRelation {
+//                     //         ngram: slice.to_string(),
+//                     //         frequency: 1,
+//                     //         after_map: NgramList::new(),
+//                     //     });
+//                 }
+//             } else {
+//                 let slice = item.to_lowercase().to_string();
+//                 if
+//                     slice
+//                         .chars()
+//                         .all(
+//                             |c|
+//                                 ((c as i32) >= 65 && (c as i32) <= 90) ||
+//                                 ((c as i32) >= 97 && (c as i32) <= 122) ||
+//                                 (c as i32) == 32
+//                         )
+//                 {
+//                     ngram_relation_mapping.add(slice);
+//                 }
+//                 // let mut test = item.chars().tuple_windows::<(_, _, _)>();
+//                 // let ngram = test.next().unwrap();
+//                 // let mut start= format!("{}{}{}", ngram.0,ngram.0,ngram.0);
+
+//                 // for relation in test.enumerate() {
+
+//                 // }
+
+//                 // for i in 0..item.chars().count() - length {
+//                 //     let slice = &item.to_lowercase()[i..i + length];
+//                 //     if
+//                 //         slice
+//                 //             .chars()
+//                 //             .all(
+//                 //                 |c|
+//                 //                     ((c as i32) >= 65 && (c as i32) <= 90) ||
+//                 //                     ((c as i32) >= 97 && (c as i32) <= 122) ||
+//                 //                     (c as i32) == 32
+//                 //             )
+//                 //     {
+//                 //         let entry = ngram_list.entry(slice.to_string()).or_insert(0);
+//                 //         *entry += 1;
+//                 //     }
+//                 // }
+//             }
+//         }
+//     }
+
+//     return ngram_relation_mapping;
+// }
+
 pub fn save_ngram_list(filename: &String, ngram_list: NgramList) {
     let folder = String::from("\\processed\\");
     save_file::<NgramList>(String::from(filename), String::from(folder), &ngram_list);
+}
+
+pub fn save_ngram_list_relation_mapping(
+    filename: &String,
+    ngram_list_relation_mapping: NgramListRelationMapping
+) {
+    let folder = String::from("\\processed\\");
+    save_file::<NgramListRelationMapping>(
+        String::from(filename),
+        String::from(folder),
+        &ngram_list_relation_mapping
+    );
+}
+
+pub fn save_string_list(filename: &String, string_list: Vec<String>) {
+    let folder = String::from("\\processed\\");
+    save_file::<Vec<String>>(String::from(filename), String::from(folder), &string_list);
 }
 
 pub fn read_ngram_list(filepath: &String) -> NgramList {

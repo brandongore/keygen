@@ -827,6 +827,30 @@ pub fn refine_evaluation(
                     total: 199462101180.0,
                     show: true,
                 },
+                KeyPenalty {
+                    name: "same finger trigram".to_string(),
+                    times: 19946210118,
+                    total: 199462101180.0,
+                    show: true,
+                },
+                KeyPenalty {
+                    name: "same finger trigram".to_string(),
+                    times: 19946210118,
+                    total: 199462101180.0,
+                    show: true,
+                },
+                KeyPenalty {
+                    name: "same finger trigram".to_string(),
+                    times: 19946210118,
+                    total: 199462101180.0,
+                    show: true,
+                },
+                KeyPenalty {
+                    name: "same finger trigram".to_string(),
+                    times: 19946210118,
+                    total: 199462101180.0,
+                    show: true,
+                },
             ],
             pos: [
                 11031838001, 6726490369, 0, 0, 6870831463, 9167198105, 257860516467, 191422733780,
@@ -1440,14 +1464,14 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     //     30, 31, 32,     33, 34, 35,
     // ];
 
-    [
-                 "",  "",  "",   "",  "",  "", 
-                "r", "h", "c",   "x", "l", "s", 
-           "k", "t", "o", "u",   "b", "i", "n", "v", 
-           "z", "d", "m", "p",   "",  "g", "y",  "", 
-                          "j",   "", 
-                "f", "e", "q",   "", "a", "w"
-    ];
+    // [
+    //              "",  "",  "",   "",  "",  "", 
+    //             "r", "h", "c",   "x", "l", "s", 
+    //        "k", "t", "o", "u",   "b", "i", "n", "v", 
+    //        "z", "d", "m", "p",   "",  "g", "y",  "", 
+    //                       "j",   "", 
+    //             "f", "e", "q",   "", "a", "w"
+    // ];
 
     //println!("types: {:?}", display_pos_relation[0].penalty_types);
     // println!("penalty 1: {:?}", position_penalties[0]);
@@ -1905,7 +1929,7 @@ pub fn evaluate_positions(ngram_list: NgramList) {
 
         if internal_penalty_list.len() > 0 {
         for (index, (position, letter_penalties)) in internal_penalty_list.clone().into_iter().enumerate() {
-            println!("internal_penalty_list {:?}", internal_penalty_list.clone());
+            //println!("internal_penalty_list {:?}", internal_penalty_list.clone());
             if letter_penalties.len() > 0 {
                 if last_lowest_letter == "".to_string() || last_lowest_score > letter_penalties[0].1 {
                     last_lowest_letter = letter_penalties[0].0.clone();
