@@ -77,8 +77,8 @@ pub fn read_layout(layout_filename: &String) -> Layout {
 
 pub fn save_small_file<T>(filename: String, folder: String, data: &T) where T: Serialize {
     let folder = folder.replace("/", "\\");
-    //let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
-    let path = ["H:\\keygen", &folder, &filename, ".json"];
+    let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
+    //let path = ["H:\\keygen", &folder, &filename, ".json"];
     let writer = BufWriter::new(File::create(path.join("")).unwrap());
     serde_json::to_writer(writer, &data).unwrap();
 }

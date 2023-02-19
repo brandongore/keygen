@@ -1,4 +1,4 @@
-use crate::file_manager::*;
+use crate::{file_manager::*, evaluator_penalty, layout, evaluator_penalty_small};
 use chrono::{ DateTime, Utc };
 use itertools::Itertools;
 use serde::{ de::{ MapAccess, SeqAccess }, Deserialize, Serialize };
@@ -547,6 +547,69 @@ pub fn save_ngram_list_relation_mapping(
     );
 }
 
+pub fn save_vec_array_list<T: serde::Serialize>(
+    filename: &String,
+    vec_array: Vec<T>
+) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<Vec<T>>(
+        String::from(filename),
+        String::from(folder),
+        &vec_array
+    );
+    // save_file::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+    //     String::from(filename),
+    //     String::from(folder),
+    //     &position_penalties
+    // );
+}
+
+pub fn save_generic_list<T: serde::Serialize>(
+    filename: &String,
+    list: T
+) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<T>(
+        String::from(filename),
+        String::from(folder),
+        &list
+    );
+    // save_file::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+    //     String::from(filename),
+    //     String::from(folder),
+    //     &position_penalties
+    // );
+}
+
+pub fn save_position_penalty_list(
+    filename: &String,
+    position_penalties: Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>
+) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+        String::from(filename),
+        String::from(folder),
+        &position_penalties
+    );
+    // save_file::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+    //     String::from(filename),
+    //     String::from(folder),
+    //     &position_penalties
+    // );
+}
+
+pub fn save_position_penalty_hashmap(
+    filename: &String,
+    position_penalties_map: HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>
+) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+        String::from(filename),
+        String::from(folder),
+        &position_penalties_map
+    );
+}
+
 pub fn save_string_list(filename: &String, string_list: Vec<String>) {
     let folder = String::from("\\processed\\");
     save_file::<Vec<String>>(String::from(filename), String::from(folder), &string_list);
@@ -554,6 +617,41 @@ pub fn save_string_list(filename: &String, string_list: Vec<String>) {
 
 pub fn read_ngram_list(filepath: &String) -> NgramList {
     return read_json::<NgramList>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_ngram_relation_mapping(filepath: &String) -> NgramListRelationMapping {
+    return read_json::<NgramListRelationMapping>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_position_penalty_list(filepath: &String) -> Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
+    return read_json::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_position_penalty_hashmap(filepath: &String) -> HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
+    return read_json::<HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_vec_array_list<T: for<'a> serde::Deserialize<'a>>(filepath: &String) -> Vec<T> {
+    return read_json::<Vec<T>>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_generic_list<T: for<'a> serde::Deserialize<'a>>(filepath: &String) -> T {
+    return read_json::<T>(
         filepath.to_string(),
         String::from("\\processed\\")
     ).unwrap_or_else(|_| panic!("Could not read corpus"));

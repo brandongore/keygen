@@ -9,10 +9,11 @@ mod simulator;
 mod timer;
 mod evaluator;
 mod evaluator_penalty;
+mod evaluator_penalty_small;
 
 use chrono::Utc;
-use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list, generate_ngram_relation_list, save_ngram_list_relation_mapping, save_string_list};
-use evaluator::{evaluate_by_ngram_frequency, evaluate_layouts, compare_layouts};
+use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list, generate_ngram_relation_list, save_ngram_list_relation_mapping, save_string_list, read_ngram_relation_mapping};
+use evaluator::{evaluate_by_ngram_frequency, evaluate_layouts, compare_layouts, evaluate_relation};
 use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
 use itertools::Itertools;
@@ -160,7 +161,10 @@ fn main() {
         "refine-evaluation" => batch_refine(corpus_filename, &layout_filename, &dir_filetype_filter, ftimer),
         "generate" => generate(corpus_filename, normalize_length),
         "run-ref" => run_ref(corpus_filename, split_char, normalize_length),
+        //cargo run --release --features "func_timer" -- evaluate-positions result2_Brandon_Gore_messages_normalized_3
         "evaluate-positions" => prebuild_positions(corpus_filename),
+        //cargo run --release --features "func_timer" -- evaluate-relation result2_Brandon_Gore_messages_normalized_relation_3-2022-12-11 18-51-48.196865 UTC
+        "evaluate-relation" => evaluate_relation_mapping(corpus_filename),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
     };
@@ -348,6 +352,16 @@ fn prebuild_positions(
 
     evaluate_positions(existing_ngram_list);
 }
+
+fn evaluate_relation_mapping(
+    corpus_filepath: &String
+) {
+    let existing_ngram_list= read_ngram_relation_mapping(&corpus_filepath);
+
+    evaluate_relation(existing_ngram_list);
+}
+
+
 
 pub fn normalize_count(count:usize, len: usize) -> f64{
     return (count as f64) / len as f64;

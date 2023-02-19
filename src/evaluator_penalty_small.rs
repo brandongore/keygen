@@ -206,9 +206,7 @@ pub struct Penalty<const N: usize> {
     pub good_score_total: f64,
     pub total: f64,
     pub len: usize,
-    pub tri_pos: [usize; 3],
-    #[serde(with = "serde_arrays")]
-    pub pos_relation: [PosRelation<N>; N],
+    pub tri_pos: [usize; 3]
 }
 
 // impl Default for PenaltyMap {
@@ -270,16 +268,6 @@ impl Penalty<{ layout::NUM_OF_KEYS }> {
             total: 0.0,
             len: 0,
             tri_pos: [0; 3],
-            pos_relation: [
-                PosRelation {
-                    relation_map: [0.0; layout::NUM_OF_KEYS],
-                    penalty_types: [
-                        PenaltyType { type_map: [usize::MAX; layout::NUM_OF_KEYS] };
-                        layout::NUM_OF_KEYS
-                    ],
-                };
-                layout::NUM_OF_KEYS
-            ],
         }
     }
 }
@@ -510,12 +498,12 @@ impl fmt::Display for KeyPenalty {
 
 #[rustfmt::skip]
 pub static BASE_PENALTY: PenaltyMap = [
-        4.0, 4.25, 5.0,     5.0, 4.75, 4.0,
+        4.0, 4.5, 5.0,     5.0, 4.75, 4.0,
         0.5, 0.6, 1.25,     3.5, 3.25, 0.5,
    3.0, 0.3, 0.3, 1.0 ,     3.0, 2.0, 0.3, 3.0,
-   3.0, 1.0, 1.0, 1.25,     3.5, 1.5, 1.0, 3.0,
-                   5.0,     5.25,
-         4.5, 0.2, 5.0,     5.25, 0.35, 4.75,
+   3.0, 2.0, 2.0, 1.25,     3.5, 2.75, 2.0, 3.0,
+                   6.0,     6.5,
+         5.5, 0.45, 5.0,     5.0, 0.75, 5.5,
 ];
 
 static PenaltyDescriptions: [KeyPenaltyDescription; 21] = [
@@ -659,9 +647,6 @@ pub fn calculate_position_penalty<'a>(
     log_base_penalty(&old1, count, &mut result);
     log_base_penalty(&curr1, count, &mut result);
 
-    log_base_relation_penalty(&old2, &old1, count, &mut result);
-    log_base_relation_penalty(&old1, &curr1, count, &mut result);
-
     evaluate_same_hand_penalties(&old2, &old1, count, &mut result);
     evaluate_same_hand_penalties(&old1, &curr1, count, &mut result);
     //8: Alternation
@@ -670,8 +655,8 @@ pub fn calculate_position_penalty<'a>(
     evaluate_trigram_penalties(&old2, &old1, &curr1, count, &mut result);
     //result.penalties[0].times
 
-    evaluate_unbalanced_finger_penalty(&mut result);
-    evaluate_unbalanced_hand_penalty(&mut result);
+    //evaluate_unbalanced_finger_penalty(&mut result);
+    //evaluate_unbalanced_hand_penalty(&mut result);
     right_hand_reduction_penalty(&mut result);
 
     // let mut type_count = 0;
@@ -761,25 +746,6 @@ pub fn update_position_penalty(
     result.pos_pen[kp.pos] += penalty;
 }
 
-pub fn update_relation_penalty(
-    penalty_index: usize,
-    prev: &EmptyKeyPress,
-    curr: &EmptyKeyPress,
-    penalty: f64,
-    result: &mut Penalty<{ layout::NUM_OF_KEYS }>
-) {
-    result.pos_relation[prev.pos].relation_map[curr.pos] += penalty;
-
-    let mut found = false;
-    for index in 0..layout::NUM_OF_KEYS{
-        if !found && result.pos_relation[prev.pos].penalty_types[curr.pos].type_map[index] == usize::MAX {
-            found = true;
-            result.pos_relation[prev.pos].penalty_types[curr.pos].type_map[index] = penalty_index;
-        }
-    }
-    
-}
-
 pub fn update_position(
     kp: &EmptyKeyPress,
     count: &usize,
@@ -793,18 +759,9 @@ pub fn log_base_penalty(
     count: &usize,
     result: &mut Penalty<{ layout::NUM_OF_KEYS }>
 ) {
-    let penalty = BASE_PENALTY[curr.pos] / 5.0;
+    let penalty = BASE_PENALTY[curr.pos] / 2.0;
     log_penalty(0, penalty, count, result);
     update_position_penalty(curr, penalty, result);
-}
-
-pub fn log_base_relation_penalty(
-    prev: &EmptyKeyPress,
-    curr: &EmptyKeyPress,
-    count: &usize,
-    result: &mut Penalty<{ layout::NUM_OF_KEYS }>
-) {
-    update_relation_penalty(0, prev, curr, BASE_PENALTY[prev.pos] + BASE_PENALTY[curr.pos], result);
 }
 
 pub fn log_same_finger_penalty(
@@ -823,7 +780,7 @@ pub fn log_same_finger_penalty(
 
     if penalty > 0.0 {
         log_penalty(1, penalty, count, result);
-        update_relation_penalty(1,prev, curr, penalty, result);
+        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -844,7 +801,7 @@ pub fn log_long_jump_hand(
 
     if penalty > 0.0 {
         log_penalty(2, penalty, count, result);
-        update_relation_penalty(2,prev, curr, penalty, result);
+        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -864,7 +821,7 @@ pub fn log_long_jump(
     };
     if penalty > 0.0 {
         log_penalty(3, penalty, count, result);
-        update_relation_penalty(3,prev, curr, penalty, result);
+        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -919,20 +876,6 @@ pub fn evaluate_trigram_penalties(
 
         if penalty_reversal > 0.0 {
             log_penalty(6, penalty_reversal, count, result);
-            update_relation_penalty(
-                6,
-                first,
-                second,
-                penalty_reversal,
-                result
-            );
-            update_relation_penalty(
-                6,
-                second,
-                third,
-                penalty_reversal,
-                result
-            );
         }
 
         // 12: Twist.
@@ -956,20 +899,6 @@ pub fn evaluate_trigram_penalties(
         };
         if penalty_twist > 0.0 {
             log_penalty(12, penalty_twist, count, result);
-            update_relation_penalty(
-                12,
-                first,
-                second,
-                penalty_twist,
-                result
-            );
-            update_relation_penalty(
-                12,
-                second,
-                third,
-                penalty_twist,
-                result
-            );
         }
 
         //15 same finger trigram
@@ -991,20 +920,6 @@ pub fn evaluate_trigram_penalties(
 
         if penalty_trigram > 0.0 {
             log_penalty(15, penalty_trigram, count, result);
-            update_relation_penalty(
-                15,
-                first,
-                second,
-                penalty_trigram,
-                result
-            );
-            update_relation_penalty(
-                15,
-                second,
-                third,
-                penalty_trigram,
-                result
-            );
         }
         update_position_penalty(first, penalty_reversal + penalty_twist + penalty_trigram, result);
         update_position_penalty(second, penalty_reversal + penalty_twist + penalty_trigram, result);
@@ -1027,20 +942,6 @@ pub fn evaluate_trigram_penalties(
     };
     if penalty_sandwich > 0.0 {
         log_penalty(11, penalty_sandwich, count, result);
-        update_relation_penalty(
-            11,
-            first,
-            second,
-            penalty_sandwich,
-            result
-        );
-        update_relation_penalty(
-            11,
-            second,
-            third,
-            penalty_sandwich,
-            result
-        );
         update_position_penalty(first, penalty_sandwich, result);
         update_position_penalty(second, penalty_sandwich, result);
         update_position_penalty(third, penalty_sandwich, result);
@@ -1055,67 +956,18 @@ pub fn evaluate_trigram_penalties(
         )
     {
         (true, true, true) => {
-            update_relation_penalty(
-                20,
-                first,
-                second,
-                -5.0,
-                result
-            );
-            update_relation_penalty(
-                20,
-                second,
-                third,
-                -5.0,
-                result
-            );
             -5.0
         },
-        (false, false, true) => {
-            update_relation_penalty(
-                20,
-                first,
-                second,
-                5.0,
-                result
-            );
-            5.0
-        },
         (true, false, false) => {
-            update_relation_penalty(
-                20,
-                first,
-                second,
-                5.0,
-                result
-            );
             5.0
         },
         (false, true, false) => {
-            update_relation_penalty(
-                20,
-                first,
-                second,
-                5.0,
-                result
-            );
+            5.0
+        },
+        (false, false, true) => {
             5.0
         },
         (false, false, false) => {
-            update_relation_penalty(
-                20,
-                first,
-                second,
-                9.0,
-                result
-            );
-            update_relation_penalty(
-                20,
-                second,
-                third,
-                9.0,
-                result
-            );
             9.0
         },
         _ => 0.0,
@@ -1137,11 +989,10 @@ pub fn evaluate_different_hand_penalties(
 ) {
     if prev.hand != curr.hand {
         //8: Alternation
-        let penalty = 1.0; //positive for test TODO make neg
+        let penalty = 2.5; //positive for test TODO make neg
         log_penalty(8, penalty, count, result);
         update_position_penalty(prev, penalty, result);
         update_position_penalty(curr, penalty, result);
-        update_relation_penalty(8,prev, curr, penalty, result);
     }
 }
 
@@ -1205,7 +1056,7 @@ pub fn evaluate_same_hand_penalties(
 
 pub fn right_hand_reduction_penalty(result: &mut Penalty<{ layout::NUM_OF_KEYS }>) {
     let base_factor = 0.8 / 16.0;
-    let penalty_right_hand = base_factor * result.bad_score_total;
+    let penalty_right_hand = base_factor * result.penalties[0].total;
     if (result.hands[0] as f64) * 100.0 < (result.hands[1] as f64) * 100.0 {
         if penalty_right_hand > 0.0 {
             log_penalty(19, penalty_right_hand, &1, result);
@@ -1233,6 +1084,7 @@ pub fn evaluate_unbalanced_hand_penalty(result: &mut Penalty<{ layout::NUM_OF_KE
     }
 }
 
+//TODO - REWORK as its not calculating finger penalty correctly
 pub fn evaluate_unbalanced_finger_penalty(result: &mut Penalty<{ layout::NUM_OF_KEYS }>) {
     let mut unbalanced_penalty = 0.0;
     let finger_count = result.fingers.len() / 2;
@@ -1300,7 +1152,7 @@ pub fn log_long_jump_consecutive(
     };
     if penalty > 0.0 {
         log_penalty(4, penalty, count, result);
-        update_relation_penalty(4,prev, curr, penalty, result);
+        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -1332,7 +1184,7 @@ pub fn log_pinky_ring_twist(
     };
     if penalty > 0.0 {
         log_penalty(5, penalty, count, result);
-        update_relation_penalty(5,prev, curr, penalty, result);
+        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -1348,22 +1200,22 @@ pub fn log_roll_out(
     let penalty = match (prev.finger.index() < curr.finger.index(), curr.row.difference(prev.row)) {
         (true, 0) => {
             log_penalty(9, 4.0, count, result);
-            update_relation_penalty(9,prev, curr, 4.0, result);
+            
             4.0
         }
         (true, 1) => {
             log_penalty(9, 6.0, count, result);
-            update_relation_penalty(9,prev, curr, 6.0, result);
+            
             6.0
         }
         (true, 2) => {
             log_penalty(7, 7.0, count, result);
-            update_relation_penalty(7,prev, curr, 7.0, result);
+            
             7.0
         }
         (true, 3) => {
             log_penalty(7, 9.0, count, result);
-            update_relation_penalty(7,prev, curr, 9.0, result);
+            
             9.0
         }
 
@@ -1387,22 +1239,22 @@ pub fn log_roll_in(
     let penalty = match (prev.finger.index() > curr.finger.index(), curr.row.difference(prev.row)) {
         (true, 0) => {
             log_penalty(10, -6.5, count, result);
-            update_relation_penalty(10,prev, curr, -6.5, result);
+            
             -6.5
         }
         (true, 1) => {
             log_penalty(10, -3.0, count, result);
-            update_relation_penalty(10,prev, curr, -3.0, result);
+            
             -3.0
         }
         (true, 2) => {
             log_penalty(16, 3.0, count, result);
-            update_relation_penalty(16,prev, curr, 3.0, result);
+            
             3.0
         }
         (true, 3) => {
             log_penalty(16, 8.0, count, result);
-            update_relation_penalty(16,prev, curr, 8.0, result);
+            
             8.0
         }
 

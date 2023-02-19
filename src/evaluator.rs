@@ -1,5 +1,17 @@
 use crate::{
-    corpus_manager::{ NgramList, normalize_ngram_list },
+    corpus_manager::{
+        NgramList,
+        normalize_ngram_list,
+        NgramListRelationMapping,
+        save_position_penalty_list,
+        read_position_penalty_list,
+        read_vec_array_list,
+        save_vec_array_list,
+        save_generic_list,
+        read_generic_list,
+        save_position_penalty_hashmap,
+        read_position_penalty_hashmap,
+    },
     file_manager::{ self, * },
     layout::{
         self,
@@ -26,9 +38,10 @@ use crate::{
         PosKeyPenalty,
         KeyFrequencyPenalty,
     },
+    evaluator_penalty_small,
 };
 use chrono::Utc;
-use dashmap::DashMap;
+//use dashmap::DashMap;
 use itertools::Itertools;
 use jwalk::Parallelism;
 use rayon::{
@@ -546,7 +559,7 @@ pub fn refine_evaluation(
     timer: &mut HashMap<String, TimerState>
 ) -> Vec<BestLayoutsEntry> {
     let mut best_layout_results: Vec<BestLayoutsEntry> = Vec::new();
-    let position_map: Arc<DashMap<usize, DashMap<char, f64>>> = Arc::new(DashMap::new());
+    //let position_map: Arc<DashMap<usize, DashMap<char, f64>>> = Arc::new(DashMap::new());
 
     let processed_ngrams: Vec<(Vec<char>, usize)> = ngram_list.map
         .into_iter()
@@ -950,7 +963,7 @@ pub fn refine_evaluation(
     // //                     }
     // //                 },
     // //             }
-    // //         }
+    // //         }(0..3)
     // //     });
     // // }
 
@@ -1245,6 +1258,137 @@ pub fn evaluate_positions(ngram_list: NgramList) {
             )
         );
     }
+
+    let mut filtered_penalties: Vec<
+        evaluator_penalty::Penalty<{ layout::NUM_OF_KEYS }>
+    > = position_penalties
+        .into_iter()
+        .filter(|pen| { pen.total < 0.0 })
+        .collect();
+
+    filtered_penalties.sort_by(|tripos1, tripos2| {
+        tripos1.total.partial_cmp(&tripos2.total).unwrap()
+    });
+
+    println!("count {:?}\r\n", filtered_penalties.len());
+
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[0].tri_pos,
+        filtered_penalties[0].total,
+        filtered_penalties[0].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[1].tri_pos,
+        filtered_penalties[1].total,
+        filtered_penalties[1].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[2].tri_pos,
+        filtered_penalties[2].total,
+        filtered_penalties[2].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[3].tri_pos,
+        filtered_penalties[3].total,
+        filtered_penalties[3].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[4].tri_pos,
+        filtered_penalties[4].total,
+        filtered_penalties[4].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[5].tri_pos,
+        filtered_penalties[5].total,
+        filtered_penalties[5].penalties
+    );
+    // println!("pospen {:?} - {:?}", filtered_penalties[6].total, filtered_penalties[6].penalties);
+    // println!("pospen {:?} - {:?}", filtered_penalties[7].total, filtered_penalties[7].penalties);
+
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[filtered_penalties.len() - 7].tri_pos,
+        filtered_penalties[filtered_penalties.len() - 7].total,
+        filtered_penalties[0].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[filtered_penalties.len() - 6].tri_pos,
+        filtered_penalties[filtered_penalties.len() - 6].total,
+        filtered_penalties[0].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[filtered_penalties.len() - 5].tri_pos,
+        filtered_penalties[filtered_penalties.len() - 5].total,
+        filtered_penalties[0].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[filtered_penalties.len() - 4].tri_pos,
+        filtered_penalties[filtered_penalties.len() - 4].total,
+        filtered_penalties[0].penalties
+    );
+    println!(
+        "pospen ({:?}) {:?} - {:?}",
+        filtered_penalties[filtered_penalties.len() - 3].tri_pos,
+        filtered_penalties[filtered_penalties.len() - 3].total,
+        filtered_penalties[1].penalties
+    );
+    // println!("pospen {:?} - {:?}", filtered_penalties[filtered_penalties.len() - 2].total, filtered_penalties[2].penalties);
+    // println!("pospen {:?} - {:?}", filtered_penalties[filtered_penalties.len() - 1].total, filtered_penalties[3].penalties);
+
+    let mut wanted: Vec<evaluator_penalty::Penalty<{ layout::NUM_OF_KEYS }>> = Vec::new();
+    let mut positions_filled = [(); layout::NUM_OF_KEYS].map(|_| "".to_string());
+    for penalty in filtered_penalties.clone().iter() {
+        if
+            (penalty.tri_pos.contains(&13) && penalty.tri_pos.contains(&14)) ||
+            (penalty.tri_pos.contains(&17) && penalty.tri_pos.contains(&18))
+        {
+            wanted.push(penalty.clone());
+        }
+        for item in penalty.tri_pos {
+            if positions_filled[item] != "0".to_string() {
+                positions_filled[item] = "0".to_string();
+            }
+        }
+    }
+
+    //println!("wanted {:?}\r\n", wanted.len());
+
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[0].tri_pos, wanted[0].total, wanted[0].penalties);
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[1].tri_pos, wanted[1].total, wanted[1].penalties);
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[2].tri_pos, wanted[2].total, wanted[2].penalties);
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[3].tri_pos, wanted[3].total, wanted[3].penalties);
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[4].tri_pos, wanted[4].total, wanted[4].penalties);
+    // println!("wanted ({:?}) {:?} - {:?}", wanted[5].tri_pos, wanted[5].total, wanted[5].penalties);
+
+    if positions_filled.iter().all(|pos| pos.eq(&"0".to_string())) {
+        //println!("ALL FILLED");
+
+        // println!("pospen {:?}", filtered_penalties[0].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[1].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[2].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[3].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[4].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[5].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[6].tri_pos);
+
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 7].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 6].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 5].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 4].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 3].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 2].tri_pos);
+        // println!("pospen {:?}", filtered_penalties[filtered_penalties.len() - 1].tri_pos);
+    }
+
     //println!("{:?}", dup_check[0]);
 
     // let mut dup_map: HashMap<String, usize> = HashMap::new();
@@ -1272,7 +1416,7 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         };
         layout::NUM_OF_KEYS
     ];
-    for item in &position_penalties {
+    for item in &filtered_penalties {
         for (position, relation) in item.pos_relation.iter().enumerate() {
             for (relation_position, penalty) in relation.relation_map.iter().enumerate() {
                 pos_relation[position].relation_map[relation_position] += penalty;
@@ -1413,47 +1557,47 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         tripos1.1.partial_cmp(&tripos2.1).unwrap()
     });
 
-    println!("{:?}", tri_permutation_penalties[0]);
-    println!("{:?}", tri_permutation_penalties[1]);
-    println!("{:?}", tri_permutation_penalties[2]);
-    println!("{:?}", tri_permutation_penalties[3]);
-    println!("{:?}", tri_permutation_penalties[4]);
-    println!("{:?}", tri_permutation_penalties[5]);
-    println!("{:?}", tri_permutation_penalties[6]);
-    println!("{:?}", tri_permutation_penalties[7]);
-    println!("{:?}", tri_permutation_penalties[8]);
-    println!("{:?}", tri_permutation_penalties[9]);
-    println!("{:?}", tri_permutation_penalties[10]);
-    println!("{:?}", tri_permutation_penalties[11]);
-    println!("{:?}", tri_permutation_penalties[12]);
-    println!("{:?}", tri_permutation_penalties[13]);
-    println!("{:?}", tri_permutation_penalties[14]);
-    println!("{:?}", tri_permutation_penalties[15]);
-    println!("{:?}", tri_permutation_penalties[16]);
-    println!("{:?}", tri_permutation_penalties[17]);
-    println!("{:?}", tri_permutation_penalties[18]);
-    println!("{:?}", tri_permutation_penalties[19]);
-    println!("{:?}", tri_permutation_penalties[20]);
-    println!("{:?}", tri_permutation_penalties[21]);
-    println!("{:?}", tri_permutation_penalties[22]);
-    println!("{:?}", tri_permutation_penalties[23]);
-    println!("{:?}", tri_permutation_penalties[24]);
-    println!("{:?}", tri_permutation_penalties[25]);
-    println!("{:?}", tri_permutation_penalties[26]);
-    println!("{:?}", tri_permutation_penalties[27]);
-    println!("{:?}", tri_permutation_penalties[28]);
-    println!("{:?}", tri_permutation_penalties[29]);
-    println!("{:?}", tri_permutation_penalties[30]);
-    println!("{:?}", tri_permutation_penalties[31]);
-    println!("{:?}", tri_permutation_penalties[32]);
-    println!("{:?}", tri_permutation_penalties[33]);
-    println!("{:?}", tri_permutation_penalties[34]);
-    println!("{:?}", tri_permutation_penalties[35]);
-    println!("{:?}", tri_permutation_penalties[36]);
-    println!("{:?}", tri_permutation_penalties[37]);
-    println!("{:?}", tri_permutation_penalties[38]);
-    println!("{:?}", tri_permutation_penalties[39]);
-    println!("{:?}", tri_permutation_penalties[40]);
+    // println!("{:?}", tri_permutation_penalties[0]);
+    // println!("{:?}", tri_permutation_penalties[1]);
+    // println!("{:?}", tri_permutation_penalties[2]);
+    // println!("{:?}", tri_permutation_penalties[3]);
+    // println!("{:?}", tri_permutation_penalties[4]);
+    // println!("{:?}", tri_permutation_penalties[5]);
+    // println!("{:?}", tri_permutation_penalties[6]);
+    // println!("{:?}", tri_permutation_penalties[7]);
+    // println!("{:?}", tri_permutation_penalties[8]);
+    // println!("{:?}", tri_permutation_penalties[9]);
+    // println!("{:?}", tri_permutation_penalties[10]);
+    // println!("{:?}", tri_permutation_penalties[11]);
+    // println!("{:?}", tri_permutation_penalties[12]);
+    // println!("{:?}", tri_permutation_penalties[13]);
+    // println!("{:?}", tri_permutation_penalties[14]);
+    // println!("{:?}", tri_permutation_penalties[15]);
+    // println!("{:?}", tri_permutation_penalties[16]);
+    // println!("{:?}", tri_permutation_penalties[17]);
+    // println!("{:?}", tri_permutation_penalties[18]);
+    // println!("{:?}", tri_permutation_penalties[19]);
+    // println!("{:?}", tri_permutation_penalties[20]);
+    // println!("{:?}", tri_permutation_penalties[21]);
+    // println!("{:?}", tri_permutation_penalties[22]);
+    // println!("{:?}", tri_permutation_penalties[23]);
+    // println!("{:?}", tri_permutation_penalties[24]);
+    // println!("{:?}", tri_permutation_penalties[25]);
+    // println!("{:?}", tri_permutation_penalties[26]);
+    // println!("{:?}", tri_permutation_penalties[27]);
+    // println!("{:?}", tri_permutation_penalties[28]);
+    // println!("{:?}", tri_permutation_penalties[29]);
+    // println!("{:?}", tri_permutation_penalties[30]);
+    // println!("{:?}", tri_permutation_penalties[31]);
+    // println!("{:?}", tri_permutation_penalties[32]);
+    // println!("{:?}", tri_permutation_penalties[33]);
+    // println!("{:?}", tri_permutation_penalties[34]);
+    // println!("{:?}", tri_permutation_penalties[35]);
+    // println!("{:?}", tri_permutation_penalties[36]);
+    // println!("{:?}", tri_permutation_penalties[37]);
+    // println!("{:?}", tri_permutation_penalties[38]);
+    // println!("{:?}", tri_permutation_penalties[39]);
+    // println!("{:?}", tri_permutation_penalties[40]);
 
     // [
     //        0, 1, 2,     3, 4, 5,
@@ -1465,11 +1609,11 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     // ];
 
     // [
-    //              "",  "",  "",   "",  "",  "", 
-    //             "r", "h", "c",   "x", "l", "s", 
-    //        "k", "t", "o", "u",   "b", "i", "n", "v", 
-    //        "z", "d", "m", "p",   "",  "g", "y",  "", 
-    //                       "j",   "", 
+    //              "",  "",  "",   "",  "",  "",
+    //             "r", "h", "c",   "x", "l", "s",
+    //        "k", "t", "o", "u",   "b", "i", "n", "v",
+    //        "z", "d", "m", "p",   "",  "g", "y",  "",
+    //                       "j",   "",
     //             "f", "e", "q",   "", "a", "w"
     // ];
 
@@ -1546,7 +1690,7 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     //println!("single_letter_gram : {:?}", sorted_single_letter_gram);
     println!("\n");
     for gram in sorted_single_letter_gram {
-        println!("{:?}", gram);
+        //println!("{:?}", gram);
     }
 
     let mut sorted_ngrams = ngram_list
@@ -1556,13 +1700,13 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         .collect::<Vec<(String, usize)>>();
 
     sorted_ngrams.sort_by(|ngram1, ngram2| ngram1.1.cmp(&ngram2.1).reverse());
-    println!("-----------------------------------------");
-    println!("sorted 0: {:?} {:?}", sorted_ngrams[0].0, sorted_ngrams[0].1);
-    println!("sorted 1: {:?} {:?}", sorted_ngrams[1].0, sorted_ngrams[1].1);
-    println!("sorted 2: {:?} {:?}", sorted_ngrams[2].0, sorted_ngrams[2].1);
-    println!("sorted 3: {:?} {:?}", sorted_ngrams[3].0, sorted_ngrams[3].1);
-    println!("sorted 4: {:?} {:?}", sorted_ngrams[4].0, sorted_ngrams[4].1);
-    println!("sorted 5: {:?} {:?}", sorted_ngrams[5].0, sorted_ngrams[5].1);
+    // println!("-----------------------------------------");
+    // println!("sorted 0: {:?} {:?}", sorted_ngrams[0].0, sorted_ngrams[0].1);
+    // println!("sorted 1: {:?} {:?}", sorted_ngrams[1].0, sorted_ngrams[1].1);
+    // println!("sorted 2: {:?} {:?}", sorted_ngrams[2].0, sorted_ngrams[2].1);
+    // println!("sorted 3: {:?} {:?}", sorted_ngrams[3].0, sorted_ngrams[3].1);
+    // println!("sorted 4: {:?} {:?}", sorted_ngrams[4].0, sorted_ngrams[4].1);
+    // println!("sorted 5: {:?} {:?}", sorted_ngrams[5].0, sorted_ngrams[5].1);
 
     let mut common_letter_list: HashMap<String, usize> = HashMap::new();
 
@@ -1693,7 +1837,7 @@ pub fn evaluate_positions(ngram_list: NgramList) {
 
     println!("-----------------------------------------");
     for gram in sorted_common_letter {
-        println!("{:?}", gram);
+        //println!("{:?}", gram);
     }
 
     let mut common_letter_frequency_list: HashMap<String, usize> = HashMap::new();
@@ -1713,24 +1857,24 @@ pub fn evaluate_positions(ngram_list: NgramList) {
 
     sorted_common_letter_frequency.sort_by(|ngram1, ngram2| ngram1.1.cmp(&ngram2.1).reverse());
 
-    println!("-----------------------------------------");
+    // println!("-----------------------------------------");
     for gram in sorted_common_letter_frequency {
-        println!("{:?}", gram);
+        //    println!("{:?}", gram);
     }
 
-    println!("--------------------UNIQUE---------------------");
+    // println!("--------------------UNIQUE---------------------");
     for gram in sorted_unique_letter_frequency {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
-    println!("--------------------FROM---------------------");
+    //println!("--------------------FROM---------------------");
     for gram in sorted_from_letter_frequency {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
-    println!("--------------------TO---------------------");
+    //println!("--------------------TO---------------------");
     for gram in sorted_to_letter_frequency {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
     let mut sorted_bigram_from_penalties = bigram_from_penalties
@@ -1753,14 +1897,14 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         ngram1.1.partial_cmp(&ngram2.1).unwrap().reverse()
     );
 
-    println!("--------------------FROM Penalty---------------------");
+    //println!("--------------------FROM Penalty---------------------");
     for gram in sorted_bigram_from_penalties {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
-    println!("--------------------TO Penalty---------------------");
+    //println!("--------------------TO Penalty---------------------");
     for gram in sorted_bigram_to_penalties {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
     let mut sorted_single_letter_frequency_list = single_letter_frequency_list
@@ -1773,9 +1917,9 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         ngram1.1.partial_cmp(&ngram2.1).unwrap().reverse()
     );
 
-    println!("--------------------single letter Penalty---------------------");
+    //println!("--------------------single letter Penalty---------------------");
     for gram in sorted_single_letter_frequency_list {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
     let mut sorted_unique_from_bigram_letter_frequency_list =
@@ -1789,9 +1933,9 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         ngram1.1.partial_cmp(&ngram2.1).unwrap().reverse()
     );
 
-    println!("--------------------bigram from unique Penalty---------------------");
+    // println!("--------------------bigram from unique Penalty---------------------");
     for gram in sorted_unique_from_bigram_letter_frequency_list {
-        println!("{:?}", gram);
+        //  println!("{:?}", gram);
     }
 
     let mut sorted_unique_to_bigram_letter_frequency_list = unique_to_bigram_letter_frequency_list
@@ -1804,9 +1948,9 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         ngram1.1.partial_cmp(&ngram2.1).unwrap().reverse()
     );
 
-    println!("--------------------bigram to unique Penalty---------------------");
+    //println!("--------------------bigram to unique Penalty---------------------");
     for gram in sorted_unique_to_bigram_letter_frequency_list {
-        println!("{:?}", gram);
+        //   println!("{:?}", gram);
     }
 
     //let key = character as u8;
@@ -1928,33 +2072,38 @@ pub fn evaluate_positions(ngram_list: NgramList) {
         let mut last_lowest_index = 0;
 
         if internal_penalty_list.len() > 0 {
-        for (index, (position, letter_penalties)) in internal_penalty_list.clone().into_iter().enumerate() {
-            //println!("internal_penalty_list {:?}", internal_penalty_list.clone());
-            if letter_penalties.len() > 0 {
-                if last_lowest_letter == "".to_string() || last_lowest_score > letter_penalties[0].1 {
-                    last_lowest_letter = letter_penalties[0].0.clone();
-                    last_lowest_score = letter_penalties[0].1;
+            for (index, (position, letter_penalties)) in internal_penalty_list
+                .clone()
+                .into_iter()
+                .enumerate() {
+                //println!("internal_penalty_list {:?}", internal_penalty_list.clone());
+                if letter_penalties.len() > 0 {
+                    if
+                        last_lowest_letter == "".to_string() ||
+                        last_lowest_score > letter_penalties[0].1
+                    {
+                        last_lowest_letter = letter_penalties[0].0.clone();
+                        last_lowest_score = letter_penalties[0].1;
+                        last_lowest_position = position;
+                        last_lowest_index = index;
+                    }
+                } else {
                     last_lowest_position = position;
-                    last_lowest_index = index;
+                    last_lowest_letter = "".to_string();
                 }
             }
-            else {
-                last_lowest_position = position;
-                last_lowest_letter = "".to_string();
+
+            evaluated_layout[last_lowest_position] = last_lowest_letter.clone();
+
+            if last_lowest_letter != "".to_string() {
+                positions_to_remove.push(last_lowest_position.clone());
+                letters_to_remove.push(last_lowest_letter);
             }
-        }
-
-        evaluated_layout[last_lowest_position] = last_lowest_letter.clone();
-
-        if last_lowest_letter != "".to_string(){
-            positions_to_remove.push(last_lowest_position.clone());
-            letters_to_remove.push(last_lowest_letter);
-        }
         }
     }
 
-    println!("--------------------lowest layout---------------------");
-    println!("{:?}", evaluated_layout);
+    //println!("--------------------lowest layout---------------------");
+    //println!("{:?}", evaluated_layout);
     // for gram in evaluated_layout.clone() {
     //     println!("{:?}", evaluated_layout);
     // }
@@ -2017,15 +2166,835 @@ pub fn evaluate_positions(ngram_list: NgramList) {
     //println!("combinations: {}", combinations.count());
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ListNgramRelationMapping {
+    pub ngram: String,
+    pub frequency: usize,
+    pub after_map: Vec<(String, usize)>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PosKey {
+    //pub pos: usize,
+    pub key: char,
+    pub trigram_index: usize,
+    pub trigram: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PosTriTree {
+    pub tripos: [usize; 3],
+    pub trigram: [char; 3],
+    pub total: f64,
+    pub frequency: usize,
+    pub after_tree: Vec<PosTriTree>,
+    pub variants: Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TriPosPenalty {
+    pub total: f64,
+    pub tripos: [usize; 3],
+    pub penalty: evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>,
+}
+
+pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
+    // let p0:usize = 13;
+    // let p1:usize = 14;
+    // let p2:usize = 31;
+
+    // println!("************************************************");
+    // let mut variant_position_combinations: Vec<[usize; 3]> = Vec::new();
+    // // for position in (0..3).map(|_| [p0,p1,p2]).multi_cartesian_product()  {
+    // //     let v0 = position[0];
+    // //     let v1 = position[1];
+    // //     let v2 = position[2];
+    // //     // println!("----------------------------------------------");
+    // //     // println!("v0 : {:?}", variant_position_combinations);
+    // //     // println!("v1 : {:?}", variant_position_combinations);
+    // //     // println!("v2 : {:?}", variant_position_combinations);
+    // //     // println!("----------------------------------------------");
+    // //     variant_position_combinations.push([v0, v1, v2]);
+    // //  }
+
+    //  for perm in [p0,p1,p2].iter().permutations(3){
+    //     let v0 = *perm[0];
+    //     let v1 = *perm[1];
+    //     let v2 = *perm[2];
+    //     variant_position_combinations.push([v0, v1, v2]);
+    //  }
+    //  println!("variants : {:?}", variant_position_combinations);
+    //  println!("************************************************");
+
+    println!("starting evaluation");
+
+    let position_penalties = evaluate_position_penalty();
+
+    println!("penalties loaded: {:?}", position_penalties.len());
+
+    let mut trigram_combinations = evaluate_trigram_combinations();
+
+    println!("trigram_combinations: {:?}", trigram_combinations.len());
+
+    let mut position_combinations = evaluate_position_combinations();
+
+    println!("position_combinations: {:?}", position_combinations.len());
+
+    let position_penalties_hashmap = evaluate_position_penalty_hashmap(
+        position_combinations.clone()
+    );
+
+    println!("hashmap penalties loaded: {:?}", position_penalties_hashmap.len());
+
+    let mut trigram_tripos_combinations = evaluate_trigram_tripos_combinations(
+        trigram_combinations.clone(),
+        position_combinations.clone()
+    );
+
+    println!("tri len: {:?}", trigram_tripos_combinations.len());
+
+    let mut trigram_tripos_filter = evaluate_trigram_tripos_filter(
+        trigram_combinations.clone(),
+        position_combinations.clone()
+    );
+
+    println!("filter len: {:?}", trigram_tripos_filter.len());
+
+    let mut tripos_variants: Vec<Vec<[usize; 3]>> = evaluate_tripos_variants(
+        position_combinations.clone()
+    );
+
+    println!("tri pos variants: {:?}", tripos_variants.len());
+
+    // let variant_position_penalty = position_penalties.clone()
+    // .into_iter()
+    // .filter(
+    //     |penalty|
+    //         (parent_has_ngram_doubling_letter == false &&
+    //             penalty.tri_pos[0] != penalty.tri_pos[1] &&
+    //             penalty.tri_pos[1] != penalty.tri_pos[2] &&
+    //             penalty.tri_pos[0] != penalty.tri_pos[2]) ||
+    //         (parent_has_ngram_doubling_letter == true &&
+    //             parent_trigram_tripos_combination.contains(&penalty.tri_pos))
+    // )
+    // .collect::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>();
+
+    let mut tripos_variants_penalised: Vec<Vec<TriPosPenalty>> = Vec::new();
+
+    for variant_list in tripos_variants {
+        let mut variant_list_penalised: Vec<TriPosPenalty> = Vec::new();
+        for tripos in variant_list {
+            let p0 = tripos[0];
+            let p1 = tripos[1];
+            let p2 = tripos[2];
+            let pos_key = [
+                p0.to_string(),
+                "_".to_string(),
+                p1.to_string(),
+                "_".to_string(),
+                p2.to_string(),
+            ].join("");
+
+            let penalty = position_penalties_hashmap.get(&pos_key).unwrap();
+
+            let tripos_penalty = TriPosPenalty { total: penalty.total, tripos, penalty: penalty.clone() };
+            variant_list_penalised.push(tripos_penalty);
+        }
+        tripos_variants_penalised.push(variant_list_penalised);
+    }
+
+    //let position_penalties = evaluate_position_penalty_orderings(position_penalties.clone(), ngram_relation.clone());
+    //println!("filter len: {:?}", trigram_tripos_filter.len());
+
+    let mut ngram_relation_list: Vec<ListNgramRelationMapping> = ngram_relation.ngrams
+        .into_iter()
+        .map(|relation| {
+            ListNgramRelationMapping {
+                ngram: relation.0,
+                frequency: relation.1.frequency,
+                after_map: relation.1.after_map.map
+                    .into_iter()
+                    .map(|ngram| {
+                        return (ngram.0, ngram.1);
+                    })
+                    .sorted_by(|(_, frequency1), (_, frequency2)|
+                        frequency1.partial_cmp(&frequency2).unwrap().reverse()
+                    )
+                    .collect(),
+            }
+        })
+        .collect::<Vec<ListNgramRelationMapping>>();
+
+    ngram_relation_list.sort_by(|relation1, relation2| {
+        relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
+    });
+
+    let mut used_position: HashMap<usize, char> = HashMap::new();
+
+    let mut relation_assignment_list: Vec<PosTriTree> = Vec::new();
+
+    let mut evaluated_layout = [(); layout::NUM_OF_KEYS].map(|_| "".to_string());
+    let mut layout_list: Vec<[String; layout::NUM_OF_KEYS]> = Vec::new();
+
+    let has_after: bool = false;
+
+    for ngram in ngram_relation_list
+        .clone()
+        .drain(0..1)
+        .collect::<Vec<ListNgramRelationMapping>>() {
+        layout_list.push(evaluated_layout.clone());
+    }
+
+    let pos_key_list = [(); layout::NUM_OF_KEYS].map(|_| {
+        return PosKey { key: '.', trigram_index: 0, trigram: "".to_string() };
+    });
+
+    for relation in ngram_relation_list.drain(0..1).collect::<Vec<ListNgramRelationMapping>>() {
+        println!("ngram: {:?} - {:?}", relation.ngram, relation.frequency);
+        let ngrams: Vec<char> = relation.ngram.chars().collect();
+
+        let character0 = ngrams[0];
+        let character1 = ngrams[1];
+        let character2 = ngrams[2];
+
+        let parent_has_ngram_doubling_letter = trigram_tripos_combinations.contains_key(
+            &relation.ngram
+        );
+        let mut parent_trigram_tripos_combination: Vec<[usize; 3]> = Vec::new();
+        if parent_has_ngram_doubling_letter {
+            parent_trigram_tripos_combination = trigram_tripos_combinations
+                .get(&relation.ngram)
+                .unwrap()
+                .to_vec();
+        }
+
+        let mut test = 0;
+
+        let mut filtered_position_penalties = position_penalties
+            .clone()
+            .into_iter()
+            .filter(
+                |penalty|
+                    (parent_has_ngram_doubling_letter == false &&
+                        penalty.tri_pos[0] != penalty.tri_pos[1] &&
+                        penalty.tri_pos[1] != penalty.tri_pos[2] &&
+                        penalty.tri_pos[0] != penalty.tri_pos[2]) ||
+                    (parent_has_ngram_doubling_letter == true &&
+                        parent_trigram_tripos_combination.contains(&penalty.tri_pos))
+            )
+            .collect::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>();
+
+        for pos_pen in filtered_position_penalties {
+            //.drain(0..2)
+            // let p0 = pos_pen.tri_pos[0];
+            // let p1 = pos_pen.tri_pos[1];
+            // let p2 = pos_pen.tri_pos[2];
+
+            let mut valid_positions: Vec<[usize; 3]> = Vec::new();
+            let mut pos_tri_tree = PosTriTree {
+                tripos: pos_pen.tri_pos.clone(),
+                trigram: [character0, character1, character2],
+                total: pos_pen.total,
+                frequency: relation.frequency,
+                after_tree: Vec::new(),
+                variants: Vec::new(),
+            };
+            //println!("************************************************");
+            // let mut variant_position_combinations: Vec<[usize; 3]> = Vec::new();
+            // for positions in [p0,p1,p2].iter().permutations(3){
+            //     let v0 = *positions[0];
+            //     let v1 = *positions[1];
+            //     let v2 = *positions[2];
+            //     // println!("----------------------------------------------");
+            //     // println!("v0 : {:?}", variant_position_combinations);
+            //     // println!("v1 : {:?}", variant_position_combinations);
+            //     // println!("v2 : {:?}", variant_position_combinations);
+            //     // println!("----------------------------------------------");
+            //     variant_position_combinations.push([v0, v1, v2]);
+            //  }
+
+            //for()
+
+            //pos_tri_tree.variants = variant_position_combinations;
+
+            //println!("variants : {:?}", variant_position_combinations);
+            //println!("************************************************");
+
+            //TODO: DO WE ADD ALL OTHER POSITION VARIANTS
+            valid_positions.push(pos_pen.tri_pos.clone());
+
+            //println!("parent pos :{:?}", pos_pen.tri_pos.clone());
+
+            for after_tri in relation.after_map.clone().drain(0..2) {
+                // if test < relation.after_map.len() {
+                //     println!("after: {:?} - {:?}", after_tri.0, after_tri.1);
+                //     test += 1;
+                // }
+
+                let child_ngrams: Vec<char> = after_tri.0.chars().collect();
+                let child_character0 = child_ngrams[0];
+                let child_character1 = child_ngrams[1];
+                let child_character2 = child_ngrams[2];
+                // the 13,14,31  e_s 31,16,15         the 13,14,31    he_  14,31,16
+                let mut position_0_filter = 999;
+                let mut position_1_filter = 999;
+                let mut position_2_filter = 999;
+
+                //find which positions match and limit next position to same positions
+                if child_character0 == character0 {
+                    position_0_filter = pos_pen.tri_pos[0];
+                }
+                if child_character0 == character1 {
+                    position_0_filter = pos_pen.tri_pos[1];
+                }
+                if child_character0 == character2 {
+                    position_0_filter = pos_pen.tri_pos[2];
+                }
+
+                if child_character1 == character0 {
+                    position_1_filter = pos_pen.tri_pos[0];
+                }
+                if child_character1 == character1 {
+                    position_1_filter = pos_pen.tri_pos[1];
+                }
+                if child_character1 == character2 {
+                    position_1_filter = pos_pen.tri_pos[2];
+                }
+
+                if child_character2 == character0 {
+                    position_2_filter = pos_pen.tri_pos[0];
+                }
+                if child_character2 == character1 {
+                    position_2_filter = pos_pen.tri_pos[1];
+                }
+                if child_character2 == character2 {
+                    position_2_filter = pos_pen.tri_pos[2];
+                }
+
+                let has_ngram_doubling_letter = trigram_tripos_combinations.contains_key(
+                    &after_tri.0
+                );
+                let mut trigram_tripos_combination: Vec<[usize; 3]> = Vec::new();
+                if has_ngram_doubling_letter {
+                    trigram_tripos_combination = trigram_tripos_combinations
+                        .get(&after_tri.0)
+                        .unwrap()
+                        .to_vec();
+                }
+
+                //println!("rel {:?}", after_tri.0);
+
+                // println!("position_filter 0 : {:?}", position_0_filter);
+                // println!("position_filter 1 : {:?}", position_1_filter);
+                // println!("position_filter 2 : {:?}", position_2_filter);
+                //println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+                for filtered_pen in position_penalties
+                    .clone()
+                    .into_iter()
+                    .filter(
+                        |penalty|
+                            !valid_positions.contains(&penalty.tri_pos) &&
+                            (position_0_filter == 999 ||
+                                (position_0_filter != 999 &&
+                                    penalty.tri_pos[0] == position_0_filter)) &&
+                            (position_1_filter == 999 ||
+                                (position_1_filter != 999 &&
+                                    penalty.tri_pos[1] == position_1_filter)) &&
+                            (position_2_filter == 999 ||
+                                (position_2_filter != 999 &&
+                                    penalty.tri_pos[2] == position_2_filter)) &&
+                            ((has_ngram_doubling_letter == false &&
+                                penalty.tri_pos[0] != penalty.tri_pos[1] &&
+                                penalty.tri_pos[1] != penalty.tri_pos[2] &&
+                                penalty.tri_pos[0] != penalty.tri_pos[2]) ||
+                                (has_ngram_doubling_letter == true &&
+                                    trigram_tripos_combination.contains(&penalty.tri_pos)))
+                    )
+                    .collect::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>() {
+                    //println!("{:?}", filtered_pen.tri_pos.clone());
+
+                    let child_pos_tri_tree = PosTriTree {
+                        tripos: filtered_pen.tri_pos.clone(),
+                        trigram: [child_character0, child_character1, child_character2],
+                        total: filtered_pen.total,
+                        frequency: after_tri.1,
+                        after_tree: Vec::new(),
+                        variants: Vec::new(),
+                    };
+
+                    pos_tri_tree.after_tree.push(child_pos_tri_tree);
+                    //println!("{:?}", pos_tri_tree);
+                }
+                //println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+            }
+            //if (pos_tri_tree.tripos[0]==31 && pos_tri_tree.tripos[1]==13 && pos_tri_tree.tripos[2]==14) || (pos_tri_tree.tripos[0]==34 && pos_tri_tree.tripos[1]==18 && pos_tri_tree.tripos[2]==17) {
+            //    println!("{:?}", pos_pen);
+            relation_assignment_list.push(pos_tri_tree);
+            //}
+        }
+        println!("----------------------------------------------");
+
+        //println!("{:?}", relation_assignment_list);
+
+        //println!("{:?}", relation_assignment_list);
+        //println!("{:?}", relation_assignment_list);
+
+        //
+
+        // let next_open_position = position_penalties
+        //     .clone()
+        //     .into_iter()
+        //     .filter(|penalty| valid_positions.contains(&penalty.tri_pos))
+        //     .collect::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>();
+
+        // if trigram_tripos_combinations.contains_key(&relation.ngram) {
+        //     valid_positions = trigram_tripos_combinations
+        //         .get_mut(&relation.ngram)
+        //         .unwrap()
+        //         .to_vec();
+        //     println!("small: {:?}", valid_positions.len());
+        // } else {
+        //     valid_positions = trigram_tripos_filter.clone();
+        //     println!("big: {:?}", valid_positions.len());
+        // }
+
+        // println!("filter penalty: {:?}", next_open_position.len());
+        //  println!("filter penalty 0: {:?}", next_open_position[0]);
+        //  println!("filter penalty 1100: {:?}", next_open_position[1100]);
+        //  println!("filter penalty 2169: {:?}", next_open_position[2169]);
+        // .enumerate()
+        // .find(|(index, _)| !used_position.contains(index))
+        // .unwrap().0;
+
+        // let next_open_position = position_penalties
+        //     .clone()
+        //     .into_iter()
+        //     .enumerate()
+        //     .find(|(index, _)| !used_position.contains(index))
+        //     .unwrap().0;
+        // used_position.push(next_open_position);
+
+        // let position_penalty = &position_penalties[next_open_position];
+
+        // let position0 = position_penalty.tri_pos[0];
+        // let position1 = position_penalty.tri_pos[1];
+        // let position2 = position_penalty.tri_pos[2];
+
+        // evaluated_layout[0] = character0.to_string();
+        // evaluated_layout[1] = character1.to_string();
+        // evaluated_layout[2] = character2.to_string();
+
+        // for after_ngram in relation.after_map.into_iter() {
+        // }
+
+        //evaluated_layout
+    }
+    // println!("{:?}", ngram_relation_list[0]);
+    // println!("{:?}", ngram_relation_list[1]);
+}
+
+pub fn evaluate_trigram_combinations() -> Vec<[char; 3]> {
+    let mut trigram_combinations: Vec<[char; 3]> = Vec::new();
+
+    //     let mut keycodes: Vec<u32> = (97..123).collect();
+    //     keycodes.push(32);
+    //     //println!("{:?}", keycodes);
+    //     for permutation in (0..3).map(|_| keycodes.clone()).multi_cartesian_product()  {
+    //         let c0 = char::from_u32(permutation[0]).unwrap();
+    //         let c1 = char::from_u32(permutation[1]).unwrap();
+    //         let c2 = char::from_u32(permutation[2]).unwrap();
+
+    //         trigram_combinations.push([c0, c1, c2]);
+    //    }
+
+    // for permutation in (0..3).map(|_| 97..123).multi_cartesian_product()  {
+    //     let c0 = char::from_u32(permutation[0]).unwrap();
+    //     let c1 = char::from_u32(permutation[1]).unwrap();
+    //     let c2 = char::from_u32(permutation[2]).unwrap();
+
+    //     trigram_combinations.push([c0, c1, c2]);
+    // }
+
+    let filename = ["trigram", "_", "combinations"].join("");
+    //save_vec_array_list::<[char; 3]>(&filename, trigram_combinations.clone());
+    let mut trigram_combinations: Vec<[char; 3]> = read_vec_array_list::<[char; 3]>(&filename);
+
+    return trigram_combinations;
+}
+
+pub fn evaluate_position_combinations() -> Vec<[usize; 3]> {
+    // let mut position_combinations: Vec<[usize; 3]> = Vec::new();
+    // for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product()  {
+    //     let p0 = position[0];
+    //     let p1 = position[1];
+    //     let p2 = position[2];
+
+    //     position_combinations.push([p0, p1, p2]);
+    //  }
+
+    let filename = ["position", "_", "combinations"].join("");
+    //save_vec_array_list::<[usize; 3]>(&filename, position_combinations.clone());
+    let mut position_combinations: Vec<[usize; 3]> = read_vec_array_list::<[usize; 3]>(&filename);
+
+    return position_combinations;
+}
+
+pub fn evaluate_trigram_tripos_combinations(
+    trigram_combinations: Vec<[char; 3]>,
+    position_combinations: Vec<[usize; 3]>
+) -> HashMap<String, Vec<[usize; 3]>> {
+    let mut trigram_tripos_combinations: HashMap<String, Vec<[usize; 3]>> = HashMap::new();
+
+    // for combination in trigram_combinations {
+    //     let c0 = combination[0];
+    //     let c1 = combination[1];
+    //     let c2 = combination[2];
+    //     let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
+
+    //     //aab
+    //     if c0 == c1 && c0 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
+    //                 let entry = trigram_tripos_combinations
+    //                     .entry(trigram.clone())
+    //                     .or_insert(Vec::new());
+    //                 entry.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //abb
+    //     if c1 == c2 && c0 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
+    //                 let entry = trigram_tripos_combinations
+    //                     .entry(trigram.clone())
+    //                     .or_insert(Vec::new());
+    //                 entry.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //aba
+    //     if c0 == c2 && c1 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
+    //                 let entry = trigram_tripos_combinations
+    //                     .entry(trigram.clone())
+    //                     .or_insert(Vec::new());
+    //                 entry.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //aaa
+    //     if c0 == c1 && c1 == c2{
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
+    //                 let entry = trigram_tripos_combinations
+    //                     .entry(trigram.clone())
+    //                     .or_insert(Vec::new());
+    //                 entry.push(tripos);
+    //             }
+    //         }
+    //     }
+    // }
+
+    // for item in trigram_tripos_combinations.clone().into_iter() {
+    //     println!("len: {} - {}", item.0, item.1.len());
+    // }
+
+    let filename = ["trigram", "_", "tripos", "_", "combinations"].join("");
+    //save_generic_list::<HashMap<String, Vec<[usize; 3]>>>(&filename, trigram_tripos_combinations.clone());
+    let mut trigram_tripos_combinations: HashMap<String, Vec<[usize; 3]>> = read_generic_list::<
+        HashMap<String, Vec<[usize; 3]>>
+    >(&filename);
+    //println!("allcomb: {}", all_combinations.len());
+    return trigram_tripos_combinations;
+}
+
+pub fn evaluate_trigram_tripos_filter(
+    trigram_combinations: Vec<[char; 3]>,
+    position_combinations: Vec<[usize; 3]>
+) -> Vec<[usize; 3]> {
+    let mut trigram_tripos_filter: Vec<[usize; 3]> = Vec::new();
+
+    // for combination in trigram_combinations {
+    //     let c0 = combination[0];
+    //     let c1 = combination[1];
+    //     let c2 = combination[2];
+    //     let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
+
+    //     //aab
+    //     if c0 == c1 && c0 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
+    //                 trigram_tripos_filter.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //abb
+    //     if c1 == c2 && c0 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
+    //                 trigram_tripos_filter.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //aba
+    //     if c0 == c2 && c1 != c2 {
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
+    //                 trigram_tripos_filter.push(tripos);
+    //             }
+    //         }
+    //     }
+    //     //aaa
+    //     if c0 == c1 && c1 == c2{
+    //         for tripos in position_combinations.clone() {
+    //             if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
+    //                 trigram_tripos_filter.push(tripos);
+    //             }
+    //         }
+    //     }
+    // }
+
+    // let unique_items: Vec<[usize;3]> = trigram_tripos_filter.clone()
+    // .into_iter()
+    // .unique()
+    // .collect::<Vec<[usize;3]>>();
+
+    // let filtered_items:Vec<[usize;3]> = position_combinations.clone()
+    // .into_iter()
+    // .filter(|positions|!unique_items.contains(positions))
+    // .collect::<Vec<[usize;3]>>();
+
+    let filename = ["trigram", "_", "tripos", "_", "filter"].join("");
+    //save_generic_list::<Vec<[usize; 3]>>(&filename, filtered_items.clone());
+    let mut filtered_items: Vec<[usize; 3]> = read_generic_list::<Vec<[usize; 3]>>(&filename);
+    //println!("filtered_items: {}", filtered_items.len());
+    return filtered_items;
+}
+
+pub fn evaluate_tripos_variants(position_combinations: Vec<[usize; 3]>) -> Vec<Vec<[usize; 3]>> {
+    // let mut tripos_variants: Vec<Vec<[usize; 3]>> = Vec::new();
+
+    // for combination in position_combinations {
+    //     let p0 = combination[0];
+    //     let p1 = combination[1];
+    //     let p2 = combination[2];
+
+    //     let mut variant_position_combinations: Vec<[usize; 3]> = Vec::new();
+    //     for positions in [p0, p1, p2].iter().permutations(3) {
+    //         let v0 = *positions[0];
+    //         let v1 = *positions[1];
+    //         let v2 = *positions[2];
+    //         variant_position_combinations.push([v0, v1, v2]);
+    //     }
+    //     variant_position_combinations.sort();
+    //     variant_position_combinations.dedup();
+
+    //     if !tripos_variants.contains(&variant_position_combinations){
+    //         tripos_variants.push(variant_position_combinations);
+    //     }
+    // }
+
+    let filename = ["tripos", "_", "variants"].join("");
+    //save_generic_list::<Vec<Vec<[usize; 3]>>>(&filename, tripos_variants.clone());
+    let mut tripos_variants: Vec<Vec<[usize; 3]>> = read_generic_list::<Vec<Vec<[usize; 3]>>>(
+        &filename
+    );
+
+    return tripos_variants;
+}
+
+pub fn evaluate_position_penalty_orderings(
+    position_penalties: Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>,
+    ngram_relation: NgramListRelationMapping
+) -> Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
+    let mut duplicate_positions_filled: HashMap<
+        usize,
+        Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>
+    > = HashMap::new();
+
+    for position_penalty in position_penalties {
+        for position in position_penalty.tri_pos {
+            let entry = duplicate_positions_filled.entry(position.clone()).or_insert(Vec::new());
+            entry.push(position_penalty.clone());
+        }
+    }
+
+    for position in duplicate_positions_filled {
+        println!("position {:?}: {:?}", position.0, position.1.len());
+    }
+
+    // let mut positions_filled = [(); layout::NUM_OF_KEYS].map(|_| "".to_string());
+
+    // for penalty in filtered_penalties.clone().iter() {
+    //     // if
+    //     //     (penalty.tri_pos.contains(&13) && penalty.tri_pos.contains(&14)) ||
+    //     //     (penalty.tri_pos.contains(&17) && penalty.tri_pos.contains(&18))
+    //     // {
+    //     //     wanted.push(penalty.clone());
+    //     // }
+    //     for item in penalty.tri_pos {
+    //         if positions_filled[item] != "0".to_string() {
+    //             positions_filled[item] = "0".to_string();
+    //         }
+    //     }
+    // }
+
+    // if positions_filled.iter().any(|pos| !pos.eq(&"0".to_string())) {
+    //     panic!();
+    // }
+
+    // println!("pospen {:?} : {:?}", filtered_penalties[0].tri_pos, filtered_penalties[0].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[1].tri_pos, filtered_penalties[1].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[2].tri_pos, filtered_penalties[2].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[3].tri_pos, filtered_penalties[3].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[4].tri_pos, filtered_penalties[4].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[5].tri_pos, filtered_penalties[5].total);
+    // println!("pospen - {:?} : {:?}", filtered_penalties[6].tri_pos, filtered_penalties[6].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 7].tri_pos, filtered_penalties[filtered_penalties.len() - 7].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 6].tri_pos, filtered_penalties[filtered_penalties.len() - 6].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 5].tri_pos, filtered_penalties[filtered_penalties.len() - 5].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 4].tri_pos, filtered_penalties[filtered_penalties.len() - 4].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 3].tri_pos, filtered_penalties[filtered_penalties.len() - 3].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 2].tri_pos, filtered_penalties[filtered_penalties.len() - 2].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 1].tri_pos, filtered_penalties[filtered_penalties.len() - 1].total);
+
+    //println!("pos len: {}", filtered_penalties.len());
+    let mut filtered_penalties: Vec<
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = Vec::new();
+    return filtered_penalties;
+}
+
+pub fn evaluate_position_penalty() -> Vec<
+    evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+> {
+    let position_map = get_empty_position_map();
+    let mut position_penalties: Vec<
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = Vec::new();
+
+    let perms = (0..NUM_OF_KEYS).permutations(3);
+    println!("perms: {}", perms.count());
+
+    for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product() {
+        //for permutation in (0..layout::NUM_OF_KEYS).collect::<Vec<usize>>().iter().permutations(3) {
+        let p0 = position[0];
+        let p1 = position[1];
+        let p2 = position[2];
+
+        position_penalties.push(
+            evaluator_penalty_small::calculate_position_penalty(
+                *position_map.get_key_position(p0),
+                *position_map.get_key_position(p1),
+                *position_map.get_key_position(p2)
+            )
+        );
+    }
+
+    //let penalty_filename = ["position", "_", "penalty"].join("");
+    //save_position_penalty_list(&penalty_filename, position_penalties.clone());
+
+    // let mut position_penalties: Vec<
+    //     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    // > = read_position_penalty_list(&penalty_filename);
+
+    let mut filtered_penalties: Vec<
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = position_penalties
+        .into_iter()
+        //.filter(|pen| { pen.total < 3.0 })
+        .collect();
+
+    filtered_penalties.sort_by(|tripos1, tripos2| {
+        tripos1.total.partial_cmp(&tripos2.total).unwrap()
+    });
+
+    //let mut wanted: Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> = Vec::new();
+    let mut positions_filled = [(); layout::NUM_OF_KEYS].map(|_| "".to_string());
+    for penalty in filtered_penalties.clone().iter() {
+        // if
+        //     (penalty.tri_pos.contains(&13) && penalty.tri_pos.contains(&14)) ||
+        //     (penalty.tri_pos.contains(&17) && penalty.tri_pos.contains(&18))
+        // {
+        //     wanted.push(penalty.clone());
+        // }
+        for item in penalty.tri_pos {
+            if positions_filled[item] != "0".to_string() {
+                positions_filled[item] = "0".to_string();
+            }
+        }
+    }
+
+    if positions_filled.iter().any(|pos| !pos.eq(&"0".to_string())) {
+        panic!();
+    }
+
+    // println!("pospen {:?} : {:?}", filtered_penalties[0].tri_pos, filtered_penalties[0].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[1].tri_pos, filtered_penalties[1].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[2].tri_pos, filtered_penalties[2].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[3].tri_pos, filtered_penalties[3].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[4].tri_pos, filtered_penalties[4].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[5].tri_pos, filtered_penalties[5].total);
+    // println!("pospen - {:?} : {:?}", filtered_penalties[6].tri_pos, filtered_penalties[6].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 7].tri_pos, filtered_penalties[filtered_penalties.len() - 7].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 6].tri_pos, filtered_penalties[filtered_penalties.len() - 6].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 5].tri_pos, filtered_penalties[filtered_penalties.len() - 5].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 4].tri_pos, filtered_penalties[filtered_penalties.len() - 4].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 3].tri_pos, filtered_penalties[filtered_penalties.len() - 3].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 2].tri_pos, filtered_penalties[filtered_penalties.len() - 2].total);
+    // println!("pospen {:?} : {:?}", filtered_penalties[filtered_penalties.len() - 1].tri_pos, filtered_penalties[filtered_penalties.len() - 1].total);
+
+    //println!("pos len: {}", filtered_penalties.len());
+
+    return filtered_penalties;
+}
+
+pub fn evaluate_position_penalty_hashmap(
+    position_combinations: Vec<[usize; 3]>
+) -> HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
+    // let position_map = get_empty_position_map();
+    // let mut position_penalties: HashMap<
+    //     String,
+    //     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    // > = HashMap::new();
+
+    // for position in position_combinations {
+    //     let p0 = position[0];
+    //     let p1 = position[1];
+    //     let p2 = position[2];
+
+    //     let pos_key = [p0.to_string(), "_".to_string(), p1.to_string(), "_".to_string(), p2.to_string()].join("");
+
+    //     let penalty = evaluator_penalty_small::calculate_position_penalty(
+    //         *position_map.get_key_position(p0),
+    //         *position_map.get_key_position(p1),
+    //         *position_map.get_key_position(p2)
+    //     );
+
+    //     position_penalties.insert(pos_key, penalty);
+    // }
+
+    let penalty_filename = ["position", "_", "penalty", "_", "hashmap"].join("");
+    //save_position_penalty_hashmap(&penalty_filename, position_penalties.clone());
+
+    let mut position_penalties: HashMap<
+        String,
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = read_position_penalty_hashmap(&penalty_filename);
+
+    return position_penalties;
+}
+
 pub fn get_penalty_list(
     list: Vec<(usize, Vec<(String, f64)>)>,
     position_remove_list: Vec<usize>,
     letter_remove_list: Vec<String>
 ) -> Vec<(usize, Vec<(String, f64)>)> {
     //println!("list {:?}", list);
-    println!("position_remove_list {:?}", position_remove_list);
-    println!("letter_remove_list {:?}", letter_remove_list);
-
+    //println!("position_remove_list {:?}", position_remove_list);
+    //println!("letter_remove_list {:?}", letter_remove_list);
 
     let updated_list = list
         .clone()
@@ -2040,7 +3009,7 @@ pub fn get_penalty_list(
             (position, updated_penalties)
         })
         .collect();
-    
+
     return updated_list;
 }
 
