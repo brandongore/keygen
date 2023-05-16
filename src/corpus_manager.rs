@@ -1,4 +1,4 @@
-use crate::{file_manager::*, evaluator_penalty, layout, evaluator_penalty_small};
+use crate::{file_manager::*, evaluator_penalty, layout, evaluator_penalty_small, evaluator::TriPosPenaltyGroup};
 use chrono::{ DateTime, Utc };
 use itertools::Itertools;
 use serde::{ de::{ MapAccess, SeqAccess }, Deserialize, Serialize };
@@ -157,7 +157,7 @@ impl NgramListRelationMapping {
                     });
                     entry.frequency += 1;
 
-                    let next_index = index + 2; // plus one means its follow, could be an option
+                    let next_index = index + 3; // plus one means its follow, could be an option
                     if next_index < ngram_list.clone().len() - 1 {
                         let next_ngram = ngram_list[next_index].clone();
 
@@ -598,6 +598,11 @@ pub fn save_position_penalty_list(
     // );
 }
 
+pub fn save_total_penalty_variant_list(filename: &String, variant_list: Vec<TriPosPenaltyGroup>) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<Vec<TriPosPenaltyGroup>>(String::from(filename), String::from(folder), &variant_list);
+}
+
 pub fn save_position_penalty_hashmap(
     filename: &String,
     position_penalties_map: HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>
@@ -607,6 +612,30 @@ pub fn save_position_penalty_hashmap(
         String::from(filename),
         String::from(folder),
         &position_penalties_map
+    );
+}
+
+pub fn save_generic_small_file<T:serde::Serialize>(
+    filename: &String,
+    data: T
+){
+    let folder = String::from("\\processed\\");
+    save_small_file::<T>(
+        String::from(filename),
+        String::from(folder),
+        &data
+    );
+}
+
+pub fn save_trigram_variant_hashmap(
+    filename: &String,
+    trigram_variant_hashmap: HashMap<String, Vec<String>>
+) {
+    let folder = String::from("\\processed\\");
+    save_small_file::<HashMap<String, Vec<String>>>(
+        String::from(filename),
+        String::from(folder),
+        &trigram_variant_hashmap
     );
 }
 
@@ -638,6 +667,20 @@ pub fn read_position_penalty_list(filepath: &String) -> Vec<evaluator_penalty_sm
 
 pub fn read_position_penalty_hashmap(filepath: &String) -> HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
     return read_json::<HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read corpus"));
+}
+
+pub fn read_generic_file<T: for<'a> serde::Deserialize<'a>>(filepath: &String) -> T {
+    return read_json::<T>(
+        filepath.to_string(),
+        String::from("\\processed\\")
+    ).unwrap_or_else(|_| panic!("Could not read file"));
+}
+
+pub fn read_trigram_variant_hashmap(filepath: &String) -> HashMap<String, Vec<String>> {
+    return read_json::<HashMap<String, Vec<String>>>(
         filepath.to_string(),
         String::from("\\processed\\")
     ).unwrap_or_else(|_| panic!("Could not read corpus"));
