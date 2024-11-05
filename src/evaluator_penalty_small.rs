@@ -500,10 +500,10 @@ impl fmt::Display for KeyPenalty {
 pub static BASE_PENALTY: PenaltyMap = [
         4.0, 4.5, 5.0,     5.0, 4.75, 4.0,
         0.5, 0.6, 1.25,     3.5, 3.25, 0.5,
-   3.0, 0.3, 0.3, 1.0 ,     3.0, 2.0, 0.3, 3.0,
-   3.0, 2.0, 2.0, 1.25,     3.5, 2.75, 2.0, 3.0,
-                   6.0,     6.5,
-         5.5, 0.45, 5.0,     5.0, 0.75, 5.5,
+   3.0, 0.3, 0.3, 1.0,     3.0, 2.0, 0.3, 3.0,
+   3.0, 1.0, 4.0, 1.25,     3.5, 5.5, 1.0, 3.0,
+                   6.0,     6.25,
+         6.5, 0.2, 5.0,     6.25, 0.35, 6.75,
 ];
 
 static PenaltyDescriptions: [KeyPenaltyDescription; 21] = [
@@ -759,7 +759,7 @@ pub fn log_base_penalty(
     count: &usize,
     result: &mut Penalty<{ layout::NUM_OF_KEYS }>
 ) {
-    let penalty = BASE_PENALTY[curr.pos] / 2.0;
+    let penalty = BASE_PENALTY[curr.pos];
     log_penalty(0, penalty, count, result);
     update_position_penalty(curr, penalty, result);
 }
@@ -778,7 +778,7 @@ pub fn log_same_finger_penalty(
         // log(1, penalty);
     };
 
-    if penalty > 0.0 {
+    if penalty != 0.0 {
         log_penalty(1, penalty, count, result);
         
     }
@@ -799,7 +799,7 @@ pub fn log_long_jump_hand(
         _ => 0.0,
     };
 
-    if penalty > 0.0 {
+    if penalty != 0.0 {
         log_penalty(2, penalty, count, result);
         
     }
@@ -819,9 +819,8 @@ pub fn log_long_jump(
         (Row::Top, Row::Bottom, true) => 10.0,
         _ => 0.0,
     };
-    if penalty > 0.0 {
+    if penalty != 0.0 {
         log_penalty(3, penalty, count, result);
-        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);
@@ -848,33 +847,33 @@ pub fn evaluate_trigram_penalties(
             )
         {
             //rollback out in
-            (true, true, true, false, false, false) => 6.0,
+            (true, true, true, false, false, false) => 18.0,
             //rollback in out wide pinky
-            (false, false, false, true, false, false) => 4.0,
+            (false, false, false, true, false, false) => 12.0,
             //rollback in out wide thumb
-            (true, true, true, false, true, false) => 4.0,
+            (true, true, true, false, true, false) => 12.0,
             //rollback in out wide ring
-            (false, false, false, false, false, false) => 7.0,
+            (false, false, false, false, false, false) => 21.0,
             //roll in out thin
-            (true, false, false, false, false, false) => 4.0,
+            (true, false, false, false, false, false) => 12.0,
 
             //rollback to same
             //ring or index rollback smaller
-            (false, false, false, false, false, true) => 2.0,
+            (false, false, false, false, false, true) => 6.0,
             //ring or index rollback bigger
-            (false, true, true, false, false, true) => 2.0,
+            (false, true, true, false, false, true) => 6.0,
             //pinky rollback smaller
-            (false, false, false, true, false, true) => 6.0,
+            (false, false, false, true, false, true) => 18.0,
             //invalid case //pinky rollback bigger
             // (false, true, true, true, false, true) => {
             //     12.0
             // }
             //thumb rollback
-            (false, true, true, false, true, true) => 2.0,
+            (false, true, true, false, true, true) => 6.0,
             _ => 0.0,
         };
 
-        if penalty_reversal > 0.0 {
+        if penalty_reversal != 0.0 {
             log_penalty(6, penalty_reversal, count, result);
         }
 
@@ -891,13 +890,13 @@ pub fn evaluate_trigram_penalties(
                 second.row.difference(first.row) > 1 || third.row.difference(second.row) > 1,
             )
         {
-            (true, true, true, true, true, true, true, false) => 4.0,
-            (false, false, true, true, true, true, true, false) => 4.0,
-            (true, true, true, true, true, true, true, true) => 7.0,
-            (false, false, true, true, true, true, true, true) => 7.0,
+            (true, true, true, true, true, true, true, false) => 12.0,
+            (false, false, true, true, true, true, true, false) => 12.0,
+            (true, true, true, true, true, true, true, true) => 21.0,
+            (false, false, true, true, true, true, true, true) => 21.0,
             _ => 0.0,
         };
-        if penalty_twist > 0.0 {
+        if penalty_twist != 0.0 {
             log_penalty(12, penalty_twist, count, result);
         }
 
@@ -911,14 +910,14 @@ pub fn evaluate_trigram_penalties(
                 third.pos != first.pos,
             )
         {
-            (true, true, true, true, true) => 5.0,
-            (true, true, true, true, false) => 5.0,
-            (true, true, true, false, true) => 5.0,
-            (true, true, false, true, true) => 5.0,
+            (true, true, true, true, true) => 70.0,
+            (true, true, true, true, false) => 60.0,
+            (true, true, true, false, true) => 25.0,
+            (true, true, false, true, true) => 25.0,
             _ => 0.0,
         };
 
-        if penalty_trigram > 0.0 {
+        if penalty_trigram != 0.0 {
             log_penalty(15, penalty_trigram, count, result);
         }
         update_position_penalty(first, penalty_reversal + penalty_twist + penalty_trigram, result);
@@ -936,11 +935,11 @@ pub fn evaluate_trigram_penalties(
             third.row.difference(first.row) > 1,
         )
     {
-        (true, true, true, false, true) => 3.0,
-        (true, true, false, true, true) => 3.0,
+        (true, true, true, false, true) => 9.0,
+        (true, true, false, true, true) => 9.0,
         _ => 0.0,
     };
-    if penalty_sandwich > 0.0 {
+    if penalty_sandwich != 0.0 {
         log_penalty(11, penalty_sandwich, count, result);
         update_position_penalty(first, penalty_sandwich, result);
         update_position_penalty(second, penalty_sandwich, result);
@@ -956,23 +955,23 @@ pub fn evaluate_trigram_penalties(
         )
     {
         (true, true, true) => {
-            -5.0
+            -10.0
         },
         (true, false, false) => {
-            5.0
+            15.0
         },
         (false, true, false) => {
-            5.0
+            15.0
         },
         (false, false, true) => {
-            5.0
+            15.0
         },
         (false, false, false) => {
-            9.0
+            27.0
         },
         _ => 0.0,
     };
-    if penalty_bad_hand_swap > 0.0 {
+    if penalty_bad_hand_swap != 0.0 {
         log_penalty(20, penalty_bad_hand_swap, count, result);
         update_position_penalty(first, penalty_bad_hand_swap, result);
         update_position_penalty(second, penalty_bad_hand_swap, result);
@@ -1055,10 +1054,10 @@ pub fn evaluate_same_hand_penalties(
 }
 
 pub fn right_hand_reduction_penalty(result: &mut Penalty<{ layout::NUM_OF_KEYS }>) {
-    let base_factor = 0.8 / 16.0;
+    let base_factor = 0.01;
     let penalty_right_hand = base_factor * result.penalties[0].total;
     if (result.hands[0] as f64) * 100.0 < (result.hands[1] as f64) * 100.0 {
-        if penalty_right_hand > 0.0 {
+        if penalty_right_hand != 0.0 {
             log_penalty(19, penalty_right_hand, &1, result);
         }
     }
@@ -1079,7 +1078,7 @@ pub fn evaluate_unbalanced_hand_penalty(result: &mut Penalty<{ layout::NUM_OF_KE
             result.bad_score_total;
     }
 
-    if unbalanced_penalty > 0.0 {
+    if unbalanced_penalty != 0.0 {
         log_penalty(18, unbalanced_penalty, &1, result);
     }
 }
@@ -1101,7 +1100,7 @@ pub fn evaluate_unbalanced_finger_penalty(result: &mut Penalty<{ layout::NUM_OF_
             result.bad_score_total;
     }
 
-    if unbalanced_penalty > 0.0 {
+    if unbalanced_penalty != 0.0 {
         log_penalty(17, unbalanced_penalty, &1, result);
     }
 }
@@ -1130,7 +1129,7 @@ pub fn log_penalty(
         _ => (),
     }
     result.total += p;
-    // if penalty.abs() > 0.0 {
+    // if penalty.abs() >// 0.0 {
     // let p = penalty * *count as f64;
     // //println!("{}; {}", i, penalty);
     // result.penalties[i].times += count;
@@ -1150,7 +1149,7 @@ pub fn log_long_jump_consecutive(
         (true, 3) => 4.5,
         _ => 0.0,
     };
-    if penalty > 0.0 {
+    if penalty != 0.0 {
         log_penalty(4, penalty, count, result);
         
     }
@@ -1182,9 +1181,8 @@ pub fn log_pinky_ring_twist(
 
         _ => 0.0,
     };
-    if penalty > 0.0 {
+    if penalty != 0.0 {
         log_penalty(5, penalty, count, result);
-        
     }
     update_position_penalty(prev, penalty, result);
     update_position_penalty(curr, penalty, result);

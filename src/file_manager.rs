@@ -86,6 +86,9 @@ pub fn save_small_file<T>(filename: String, folder: String, data: &T) where T: S
 pub fn save_file<T>(filename: String, folder: String, data: &T) where T: Serialize {
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
+    //let path = ["C:\\git\\rskeyboard", &folder, &filename, ".json"];
+    println!("path - {:?}", path.join(""));
+    //C:\dev\dactylmanuform\rustkeygen\mykeygen\keygen\target\release
     let writer = BufWriter::new(File::create(path.join("")).unwrap());
     serde_json::to_writer_pretty(writer, &data).unwrap();
 }
@@ -121,6 +124,8 @@ pub fn read_json<'a, T>(filename: String, folder: String) -> Result<T, serde_jso
 {
     let folder = folder.replace("/", "\\");
     let path = [env!("CARGO_MANIFEST_DIR"), &folder, &filename, ".json"];
+    //let path = ["C:\\git\\rskeyboard", &folder, &filename, ".json"];
+    
     println!("path----- {:?}", path.join(""));
     let file = File::open(path.join("")).expect("Unable to open file");
     let mut reader = BufReader::new(file);

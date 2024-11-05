@@ -270,14 +270,14 @@ impl fmt::Display for Penalty {
 }
 
 /// chain two orderings: the first one gets more priority
-fn chain_partial_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Option<Ordering> {
+pub fn chain_partial_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Option<Ordering> {
     match o1 {
         Some(Ordering::Equal) => o2,
         _ => o1,
     }
 }
 
-fn chain_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Ordering {
+pub fn chain_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Ordering {
     match o1 {
         Some(ord) =>
             match ord {
@@ -287,6 +287,21 @@ fn chain_ordering(o1: Option<Ordering>, o2: Option<Ordering>) -> Ordering {
                         None => Ordering::Equal,
                     }
                 _ => ord,
+            }
+        None => Ordering::Equal,
+    }
+}
+
+pub fn chain_ordering_first_reversed(o1: Option<Ordering>, o2: Option<Ordering>) -> Ordering {
+    match o1 {
+        Some(ord) =>
+            match ord {
+                Ordering::Equal =>
+                    match o2 {
+                        Some(ord) => ord,
+                        None => Ordering::Equal,
+                    }
+                _ => ord.reverse(),
             }
         None => Ordering::Equal,
     }
@@ -393,12 +408,12 @@ impl fmt::Display for KeyPenalty {
 
 #[rustfmt::skip]
 pub static BASE_PENALTY: PenaltyMap = [
-        4.0, 4.25, 5.0,     5.0, 4.25, 4.0,
-        0.5, 0.6, 1.25,     3.5, 0.6, 0.5,
-   3.0, 0.3, 0.3, 1.0 ,     3.0, 0.3, 0.3, 3.0,
-   3.0, 1.0, 1.0, 1.25,     3.5, 1.0, 1.0, 3.0,
-                   5.0,     5.0,
-         4.0, 0.2, 5.0,     5.0, 0.25, 4.0,
+        4.0, 4.5, 5.0,     5.0, 4.75, 4.0,
+        0.5, 0.6, 1.25,     3.5, 3.25, 0.5,
+   3.0, 0.3, 0.3, 1.0 ,     3.0, 2.0, 0.3, 3.0,
+   3.0, 1.0, 4.0, 1.25,     3.5, 5.5, 1.0, 3.0,
+                   6.0,     6.25,
+         6.5, 0.2, 5.0,     6.25, 0.35, 6.75,
 ];
 
 static PenaltyDescriptions: [KeyPenaltyDescription; 21] = [
@@ -544,7 +559,7 @@ pub fn calculate_penalty<'a>(
 
         let old2 = position_map.get_key_position(string[0]).unwrap();
         let old1 = position_map.get_key_position(string[1]).unwrap();
-        let curr = position_map.get_key_position(string[2]).unwrap();
+        let curr1 = position_map.get_key_position(string[2]).unwrap();
 
         // let old2 = match *position_map.get_key_position(trigram.chars().nth(0).expect("broken ngram")) {
         //     Some(ref o) => o,
@@ -567,7 +582,7 @@ pub fn calculate_penalty<'a>(
 
         update_hand(&old2, count, &mut result);
         update_hand(&old1, count, &mut result);
-        update_hand(&curr, count, &mut result);
+        update_hand(&curr1, count, &mut result);
 
         // update_position(&old2, count, &mut result);
         // update_position(&old1, count, &mut result);
@@ -576,17 +591,16 @@ pub fn calculate_penalty<'a>(
         // 0: Base penalty.
         log_base_penalty(&old2, count, &mut result);
         log_base_penalty(&old1, count, &mut result);
-        log_base_penalty(&curr, count, &mut result);
+        log_base_penalty(&curr1, count, &mut result);
 
         evaluate_same_hand_penalties(&old2, &old1, count, &mut result);
-        evaluate_same_hand_penalties(&old1, &curr, count, &mut result);
+        evaluate_same_hand_penalties(&old1, &curr1, count, &mut result);
 
         //8: Alternation
 
         evaluate_different_hand_penalties(&old2, &old1, count, &mut result);
-        evaluate_different_hand_penalties(&old1, &curr, count, &mut result);
-
-        evaluate_trigram_penalties(&old2, &old1, &curr, count, &mut result);
+        evaluate_different_hand_penalties(&old1, &curr1, count, &mut result);
+        evaluate_trigram_penalties(&old2, &old1, &curr1, count, &mut result);
         //});
 
         //timer.stop(String::from("trigrams"));
@@ -668,8 +682,8 @@ pub fn calculate_penalty<'a>(
     //timer.stop(String::from("map"));
     //}
 
-    evaluate_unbalanced_finger_penalty(&mut result);
-    evaluate_unbalanced_hand_penalty(&mut result);
+    // evaluate_unbalanced_finger_penalty(&mut result);
+    // evaluate_unbalanced_hand_penalty(&mut result);
     right_hand_reduction_penalty(&mut result);
 
     let ret = BestLayoutsEntry {
@@ -743,7 +757,7 @@ pub fn update_position(kp: &KeyPress, count: &usize, result: &mut Penalty) {
 }
 
 pub fn log_base_penalty(curr: &KeyPress, count: &usize, result: &mut Penalty) {
-    let penalty = BASE_PENALTY[curr.pos] / 5.0;
+    let penalty = BASE_PENALTY[curr.pos] / 2.0;
     log_penalty(0, penalty, count, result);
     update_position_penalty(curr, penalty, result);
 }
@@ -756,7 +770,7 @@ pub fn log_same_finger_penalty(
 ) {
     //sfb
     let penalty = match (curr.finger.index() == prev.finger.index(), curr.pos != prev.pos) {
-        (true, true) => 10.0,
+        (true, true) => 20.0,
         _ => 0.0,
         //let penalty = 15.0; //+ if curr.center { 5.0 } else { 0.0 } ;
         // log(1, penalty);
@@ -879,10 +893,10 @@ pub fn evaluate_trigram_penalties(
                 third.pos != first.pos,
             )
         {
-            (true, true, true, true, true) => 5.0,
-            (true, true, true, true, false) => 5.0,
-            (true, true, true, false, true) => 5.0,
-            (true, true, false, true, true) => 5.0,
+            (true, true, true, true, true) => 70.0,
+            (true, true, true, true, false) => 60.0,
+            (true, true, true, false, true) => 25.0,
+            (true, true, false, true, true) => 25.0,
             _ => 0.0,
         };
 
@@ -910,33 +924,42 @@ pub fn evaluate_trigram_penalties(
     };
     if penalty_sandwich > 0.0 {
         log_penalty(11, penalty_sandwich, count, result);
+        update_position_penalty(first, penalty_sandwich, result);
+        update_position_penalty(second, penalty_sandwich, result);
+        update_position_penalty(third, penalty_sandwich, result);
     }
-    update_position_penalty(first, penalty_sandwich, result);
-    update_position_penalty(second, penalty_sandwich, result);
-    update_position_penalty(third, penalty_sandwich, result);
 
-            // 20: Bad hand swap
-            let penalty_bad_hand_swap = match
-            (
-                first.hand == second.hand,
-                second.hand == third.hand,
-                third.hand == first.hand
-            )
-        {
-            (false, true, false) => {
-                5.0
-            },
-            (false, false, false) => {
-                9.0
-            },
-            _ => 0.0,
-        };
-        if penalty_bad_hand_swap > 0.0 {
-            log_penalty(20, penalty_bad_hand_swap, count, result);
-            update_position_penalty(first, penalty_bad_hand_swap, result);
-            update_position_penalty(second, penalty_bad_hand_swap, result);
-            update_position_penalty(third, penalty_bad_hand_swap, result);
-        }
+        // 20: Bad hand swap
+        let penalty_bad_hand_swap = match
+        (
+            first.hand == second.hand,
+            second.hand == third.hand,
+            third.hand == first.hand
+        )
+    {
+        (true, true, true) => {
+            -5.0
+        },
+        (true, false, false) => {
+            5.0
+        },
+        (false, true, false) => {
+            5.0
+        },
+        (false, false, true) => {
+            5.0
+        },
+        (false, false, false) => {
+            9.0
+        },
+        _ => 0.0,
+    };
+    if penalty_bad_hand_swap > 0.0 {
+        log_penalty(20, penalty_bad_hand_swap, count, result);
+        update_position_penalty(first, penalty_bad_hand_swap, result);
+        update_position_penalty(second, penalty_bad_hand_swap, result);
+        update_position_penalty(third, penalty_bad_hand_swap, result);
+    }
 }
 
 pub fn evaluate_different_hand_penalties(
@@ -947,7 +970,7 @@ pub fn evaluate_different_hand_penalties(
 ) {
     if prev.hand != curr.hand {
         //8: Alternation
-        let penalty = -0.1;
+        let penalty = 2.5; //positive for test TODO make neg
         log_penalty(8, penalty, count, result);
         update_position_penalty(prev, penalty, result);
         update_position_penalty(curr, penalty, result);
@@ -1013,8 +1036,8 @@ pub fn evaluate_same_hand_penalties(
 }
 
 pub fn right_hand_reduction_penalty(result: &mut Penalty) {
-    let base_factor = 1.0 / 16.0;
-    let penalty_right_hand = base_factor * result.bad_score_total;
+    let base_factor = 0.8 / 16.0;
+    let penalty_right_hand = base_factor * result.penalties[0].total;
     if (result.hands[0] as f64) * 100.0 < (result.hands[1] as f64) * 100.0 {
         if penalty_right_hand > 0.0 {
             log_penalty(19, penalty_right_hand, &1, result);
@@ -1029,13 +1052,14 @@ pub fn evaluate_unbalanced_hand_penalty(result: &mut Penalty) {
         sum += ((result.hands[index] as f64) * 100.0) / (result.len as f64);
     }
     let mean = sum / (2.0 as f64);
-    let base_factor = ((1.0 / (2.0 as f64)) * 1.0) / 16.0;
+    let base_factor = ((1.0 / (2.0 as f64)) * 0.3) / 16.0;
     for index in 0..2 {
         unbalanced_penalty +=
-            (((result.hands[index] as f64) * 100.0) / (result.len as f64) - mean).abs().powf(3.0) *
+            (((result.hands[index] as f64) * 100.0) / (result.len as f64) - mean).abs() * //.powf(3.0)
             base_factor *
             result.bad_score_total;
     }
+
     if unbalanced_penalty > 0.0 {
         log_penalty(18, unbalanced_penalty, &1, result);
     }
@@ -1049,15 +1073,14 @@ pub fn evaluate_unbalanced_finger_penalty(result: &mut Penalty) {
         sum += ((result.fingers[index] as f64) * 100.0) / (result.len as f64);
     }
     let mean = sum / (finger_count as f64);
-    let base_factor = ((1.0 / (finger_count as f64)) * 0.8) / 16.0;
+    let base_factor = ((1.0 / (finger_count as f64)) * 0.6) / 16.0;
     for index in 0..finger_count {
         unbalanced_penalty +=
-            (((result.fingers[index] as f64) * 100.0) / (result.len as f64) - mean)
-                .abs()
-                .powf(3.0) *
+            (((result.fingers[index] as f64) * 100.0) / (result.len as f64) - mean).abs() * //.powf(3.0)
             base_factor *
             result.bad_score_total;
     }
+
     if unbalanced_penalty > 0.0 {
         log_penalty(17, unbalanced_penalty, &1, result);
     }

@@ -98,9 +98,18 @@ impl NgramListRelationMapping {
 
         //(t,h,e), (h,e,r), (e,r,e), (r,e,' '), (e,'',i),('',i,s), (i,s,'')
         //"there is"
+        let mut wig = false;
+        if ngram.contains("wig") {
+            //println!("wig characters {:?}", ngram);
+            //println!("wig tuples {:?}", ngram_tuples);
+            wig = true;
+        }
 
         for item in ngram_tuples.clone() {
             let ngram = format!("{}{}{}", item.0, item.1, item.2);
+            if wig == true {
+                //println!("wig ngram: '{:?}'", ngram);
+            }
             //println!("ngram {} ({}{}{}) {}{}{}",ngram, item.0, item.1, item.2, item.0 as i32, item.1 as i32, item.2 as i32);
             if (item.0 as i32) != 32 || (item.1 as i32) != 32 || (item.2 as i32) != 32 {
                 if
@@ -115,7 +124,17 @@ impl NgramListRelationMapping {
                 {
                     ngram_list.push(ngram.to_lowercase());
                 } else {
-                    ngram_list.push(ngram);
+                    if ngram
+                        .chars()
+                        .any(
+                            |c|
+                                ((c as i32) >= 65 && (c as i32) <= 90)
+                        ){
+                            ngram_list.push(ngram.to_lowercase());
+                        }
+                        else{
+                            ngram_list.push(ngram);
+                        }
                 }
             }
             // println!("chars {:?}", ngram.chars().into_iter().map(|chars| chars as i32).collect::<Vec<i32>>());
@@ -129,6 +148,10 @@ impl NgramListRelationMapping {
                 .collect_tuple::<(_, _, _)>()
                 .unwrap();
 
+                if wig == true {
+                    //println!("last wig ngram: '{:?}'", last_ngram);
+                }
+
             if
                 !ngram_list
                     .last()
@@ -137,6 +160,10 @@ impl NgramListRelationMapping {
                     .all(|c| (c as i32) != 32)
             {
                 ngram_list.push(format!("{}{}{}", last_ngram.1, last_ngram.2, ' '));
+
+                if wig == true {
+                    //println!("not space wig : '{:?}'", format!("{}{}{}", last_ngram.1, last_ngram.2, ' '));
+                }
             }
 
             for (index, ngram) in ngram_list.clone().into_iter().enumerate() {
@@ -157,9 +184,24 @@ impl NgramListRelationMapping {
                     });
                     entry.frequency += 1;
 
+                    if wig == true {
+                        //println!("wig entry: '{:?}'", entry);
+                    }
+
+                   
+
                     let next_index = index + 3; // plus one means its follow, could be an option
-                    if next_index < ngram_list.clone().len() - 1 {
+
+                    if entry.ngram == "wig" {
+                        //println!("wig next: '{:?}' - len {:?} ", next_index, ngram_list.clone().len() - 1);
+                    }
+
+                    if next_index <= ngram_list.clone().len() - 1 {
                         let next_ngram = ngram_list[next_index].clone();
+
+                        if wig == true {
+                            //println!("wig next ngram: '{:?}'", next_ngram);
+                        }
 
                         if
                             next_ngram
@@ -288,8 +330,10 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
     let mut ngram_list: HashMap<String, usize> = HashMap::new();
     //missing hundreds of items, eg iff 475 output 561 in base
 
+    
+
     for item in corpus {
-        if item.chars().all(|c| (c as i32) <= 128) {
+        //if item.chars().all(|c| (c as i32) <= 128) {
             if item.chars().count() < length {
                 let slice = format!("{}{:<indent$}", &item.to_lowercase(), indent = length);
                 if
@@ -306,8 +350,14 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
                     *entry += 1;
                 }
             } else {
-                for i in 0..item.chars().count() - length {
-                    let slice = &item.to_lowercase()[i..i + length];
+                let onlyAsciiItem = item.chars().filter(|c| c.is_ascii()).collect::<String>();
+                // if onlyAsciiItem.chars().count() < 3 {
+                //     println!("onlyAsciiItem '{}'", onlyAsciiItem);
+                // }
+
+                if onlyAsciiItem.chars().count() >= 3 {
+                for i in 0..onlyAsciiItem.chars().count() - length {
+                    let slice = &onlyAsciiItem[i..i + length].to_lowercase();
                     if
                         slice
                             .chars()
@@ -323,7 +373,8 @@ pub fn generate_ngram_list(corpus: Vec<String>, length: usize) -> NgramList {
                     }
                 }
             }
-        }
+            }
+        //}
     }
 
     NgramList {

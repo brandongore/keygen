@@ -5,7 +5,10 @@ name = "keygen"
 version = "0.1.0"
 authors = ["Xuming Zeng <xsznix@gmail.com>"]
 edition = "2021"
-rust-version = "1.56.0"
+rust-version = "1.76.0"
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [dependencies]
 rand = "0.7.3"
@@ -33,6 +36,9 @@ serde_arrays = "0.1.0"
 opt-level = 3
 debug = true
 features = ["func_timer"]
+
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.release]
 lto = "fat"

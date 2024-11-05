@@ -209,6 +209,8 @@ pub struct EmptyKeyPress
 
 pub const NUM_OF_KEYS: usize = 36;
 
+//pub const NUM_OF_KEYS: usize = 28;
+
 // q w e r t y u i o p [ { ] } \ |
 // a s d f g h j k l ; : ' "
 // z x c v b n m , < . > / ?
@@ -247,28 +249,47 @@ pub const NUM_OF_KEYS: usize = 36;
 #[rustfmt::skip]
 pub static BASE: Layout = Layout(
 	Layer(LayerKeys::new([          
-					 ' ', ' ', ' ',   ' ', ' ', ' ', 
-	                 'r', 'h', 'c',   'x', 'l', 's',
-		        'k', 't', 'o', 'u',   'b', 'i', 'n', 'v', 
-				'z', 'd', 'm', 'p',   ' ', 'g', 'y', ' ', 
-							  'j',   ' ',
-				     'f','e','q',   ' ', 'a', 'w'])),
+					 'f', 'j', 'x',   'r', 'h', 'y', 
+	                 'e', 'o', 'u',   'c', 'n', 'a',
+		        'd', 't', 'g', 'p',   'v', 's', 'i', 'w', 
+				'k', 'l', ' ', 'z',   'm', ' ', 'b', 'q', 
+							  ' ',   ' ',
+				    ' ',' ',' ',   ' ', ' ', '_'
+					])),
 	Layer(LayerKeys::new([          
-					' ', ' ', ' ',   ' ', ' ', ' ', 
-					'R', 'H', 'C',   'X', 'L', 'S',
-			   'K', 'T', 'O', 'U',   'B', 'I', 'N', 'V', 
-			   'Z', 'D', 'M', 'P',   ' ', 'G', 'Y', ' ', 
-							 'J',   ' ',
-					'F','E','Q',   ' ', 'A', 'W'])));
+					'F', 'J', 'X',   'R', 'H', 'Y', 
+					'E', 'O', 'U',   'C', 'N', 'A',
+			   'D', 'T', 'G', 'P',   'V', 'S', 'I', 'W', 
+			   'K', 'L', ' ', 'Z',   'M', ' ', 'B', 'Q', 
+							 ' ',   ' ',
+					' ',' ',' ',   ' ', ' ', '_'
+					])),
+					);
+
+			// 		'w', 'v', 'm',   'e', 'g', 'o', 
+			// 		' ', ' ', 'z',   'h', 'd', 'a',
+			//    'k', ' ', ' ', ' ',   'r', 'i', 'y', 'c', 
+			//    'p', 'x', 'q', ' ',   't', 'n', ' ', 'u', 
+			// 				 's',   'l',
+			// 		'b',' ','f',   ' ', ' ', 'j'])),
+
+					// #[rustfmt::skip]
+					// static LAYOUT_FILE_IDXS: KeyIndexMap = [
+					// 		 0,  1,  2,    3,  4,  5, 
+					// 		 6,  7,  8,    9,  10, 11,
+					// 	12, 13, 14, 15,    16, 17, 18, 19, 
+					// 	20, 21, 22, 23,    24, 25, 26, 27, 
+					// 				28,    29,    
+					// 		30, 31, 32,    33, 34, 35];
 
 #[rustfmt::skip]
 pub static SWAPPABLE_MAP: SwapMap= [
-	       true,  true,  false,   false,  true,  true,  
+	       true,  true,  true,   true,  true,  true,  
 	       true,  true,  true,    true,  true,  true,  
 	true,  true,  true,  true,    true,  true,  true,  true,  
-	true,  true,  false,  true,    true,  false,  true,  true,  
+	true,  true,  true,  true,    true,  true,  true,  true,  
 	                    false,    false,
-		false,  true,  false,    false,  true,  false,  
+		false,  false,  false,    false,  false,  false,  
 ];
  
 #[rustfmt::skip]
@@ -320,7 +341,8 @@ static LAYOUT_FILE_IDXS: KeyIndexMap = [
 	12, 13, 14, 15,    16, 17, 18, 19, 
 	20, 21, 22, 23,    24, 25, 26, 27, 
 				28,    29,    
-		30, 31, 32,    33, 34, 35];
+		30, 31, 32,    33, 34, 35
+		];
 
 /* ----- *
  * IMPLS *
@@ -332,10 +354,10 @@ impl Layout
 	-> Layout
 	{
 		let s: Vec<char> = s.chars().collect();
-		let mut lower: [char; 36] = ['\0'; 36];
-		let mut upper: [char; 36] = ['\0'; 36];
+		let mut lower: [char; layout::NUM_OF_KEYS] = ['\0'; layout::NUM_OF_KEYS];
+		let mut upper: [char; layout::NUM_OF_KEYS] = ['\0'; layout::NUM_OF_KEYS];
 		
-		for i in 0..36 {
+		for i in 0..layout::NUM_OF_KEYS {
 			let file_i = LAYOUT_FILE_IDXS[i];
 			lower[i] = *s.get(file_i as usize).unwrap_or(&'\0');
 			upper[i] = *s.get(file_i as usize + 40).unwrap_or(&'\0');
@@ -348,10 +370,10 @@ impl Layout
 	-> Layout
 	{
 		let s: Vec<char> = s.chars().collect();
-		let mut lower: [char; 36] = ['\0'; 36];
-		let mut upper: [char; 36] = ['\0'; 36];
+		let mut lower: [char; layout::NUM_OF_KEYS] = ['\0'; layout::NUM_OF_KEYS];
+		let mut upper: [char; layout::NUM_OF_KEYS] = ['\0'; layout::NUM_OF_KEYS];
 		
-		for i in 0..36 {
+		for i in 0..layout::NUM_OF_KEYS {
 			let file_i = LAYOUT_FILE_IDXS[i];
 			let key = if let Some(entry) = s.get(file_i as usize) {
 					let keychar = *entry;

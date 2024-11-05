@@ -165,6 +165,7 @@ fn main() {
         "evaluate-positions" => prebuild_positions(corpus_filename),
         //cargo run --release --features "func_timer" -- evaluate-relation result2_Brandon_Gore_messages_normalized_relation_3-2022-12-11 18-51-48.196865 UTC
         "evaluate-relation" => evaluate_relation_mapping(corpus_filename),
+        "evaluate-layout" => evaluate_layout(corpus_filename),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
     };
@@ -256,7 +257,7 @@ fn batch(
 
     let timestamp = Utc::now().to_string();
     let timestamp = &timestamp.replace(":", "").replace(" ", "_")[0..17];
-    let string_list_filename = ["list","_", normalize_length.to_string().as_str(),"_",timestamp].join("");
+    let string_list_filename = ["list","_", &dir_filetype_filter.replace(".", "") ,"_", normalize_length.to_string().as_str(),"_",timestamp].join("");
     save_string_list(&string_list_filename, contents);
 
 
@@ -503,12 +504,12 @@ fn generate(
 ) {
     let corpus= read_json_array_list(&filepath);
 
-    let ngram_list = generate_ngram_list(corpus.clone(), normalize_length);
-    let processed_filename = [filepath, "_normalized","_", normalize_length.to_string().as_str()].join("");
-    save_ngram_list(&processed_filename, ngram_list);
-
     let timestamp = Utc::now().to_string();
     let timestamp = timestamp.replace(":", "-");
+
+    let ngram_list = generate_ngram_list(corpus.clone(), normalize_length);
+    let processed_filename = [filepath, "_normalized","_", normalize_length.to_string().as_str(), "-", &timestamp].join("");
+    save_ngram_list(&processed_filename, ngram_list);
 
     let ngram_relation_list = generate_ngram_relation_list(corpus, normalize_length);
     let processed_filename = [filepath, "_normalized_relation","_", normalize_length.to_string().as_str(), "-", &timestamp].join("");
@@ -542,13 +543,66 @@ fn run_ref(
         .map(|item| (item.0.chars().collect(), item.1))
         .collect();
 
-        let layout_string = "gzv  xdncheawtlsrioupbmfqykj        ".to_string();
-        //let layout = Layout::from_lower_string(&layout_string[..]); 
+        //let layout_string = "fk  wxctlibqspvhuraodg mz yj  e  n ".to_string();
+        let layout_string = "aty### beqxvuikhgmdw#cj##lzpo#fns#r".to_string();
 
-        let layout = layout::BASE;
+        //layout assignment: 6678809.956041669
+//all_assigned_char_position_hashmap: {'h': 24, 'b': 16, 'q': 20, 'g': 31, 'p': 0, 'v': 6, 'w': 21, 'e': 26, 'o': 34, 'l': 23, 'j': 8, 'd': 12, 'f': 35, 's': 27, 't': 9, 'a': 33, 'm': 19, ' ': 3, 'y': 25, 'u': 17, 'x': 29, 'z': 22, 'n': 14, 'c': 7, 'r': 18, 'k': 15, 'i': 13}
+
+//layout assignment: 6262990.552083353
+//all_assigned_char_position_hashmap: {'p': 4, 'e': 33, 'y': 35, 'a': 18, 's': 31, 'c': 27, 'q': 7, 'r': 26, 'i': 29, 'o': 34, 'w': 5, 't': 9, 'v': 10, 'n': 16, 'b': 17, 'k': 13, 'm': 14, 'z': 21, 'f': 6, 'l': 8, 'd': 15, 'u': 25, ' ': 3, 'x': 11, 'j': 23, 'h': 24, 'g': 19}
+
+        let layout = Layout::from_lower_string(&layout_string[..]); 
+
+        //let layout = layout::BASE;
 
         let best_layout = penalty::calculate_penalty(&processed_ngrams, &layout);
         simulator::print_result(&best_layout);
+    //run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
+
+	// match  quartads {
+	// 	Some(quartads) => run_ref_(quartads),
+	// 	None => run_ref_(&corpus_manager::prepare_ngram_list(corpus, swap_list, &split_char , normalize_length)),
+	// }
+
+}
+
+fn evaluate_layout(
+    filepath: &String
+){
+    //let corpus = read_text(&filepath.to_string());
+	// let run_ref_ = |ngrams|{  // making typechecker happy
+
+	// 	let ref_test = |s:&str, l:&layout::Layout|{
+	// 		println!("Reference: {}", s);
+	// 		let init_pos_map = l.get_position_map();
+	// 		let penalty= penalty::calculate_penalty(ngrams, &l);
+	// 		 simulator::print_result(&penalty);
+	// 		//println!("");
+	// 	};
+	// 	ref_test("BASE", &layout::BASE);
+	// };
+
+    // let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
+
+    let existing_ngram_list= read_ngram_relation_mapping(&filepath);
+
+        //let layout_string = "fk  wxctlibqspvhuraodg mz yj  e  n ".to_string();
+        let layout_string = "aty### beqxvuikhgmdw#cj##lzpo#fns#r".to_string();
+        let layout_string = "q##e###############################".to_string();
+
+        //layout assignment: 6678809.956041669
+//all_assigned_char_position_hashmap: {'h': 24, 'b': 16, 'q': 20, 'g': 31, 'p': 0, 'v': 6, 'w': 21, 'e': 26, 'o': 34, 'l': 23, 'j': 8, 'd': 12, 'f': 35, 's': 27, 't': 9, 'a': 33, 'm': 19, ' ': 3, 'y': 25, 'u': 17, 'x': 29, 'z': 22, 'n': 14, 'c': 7, 'r': 18, 'k': 15, 'i': 13}
+
+//layout assignment: 6262990.552083353
+//all_assigned_char_position_hashmap: {'p': 4, 'e': 33, 'y': 35, 'a': 18, 's': 31, 'c': 27, 'q': 7, 'r': 26, 'i': 29, 'o': 34, 'w': 5, 't': 9, 'v': 10, 'n': 16, 'b': 17, 'k': 13, 'm': 14, 'z': 21, 'f': 6, 'l': 8, 'd': 15, 'u': 25, ' ': 3, 'x': 11, 'j': 23, 'h': 24, 'g': 19}
+
+        let layout = Layout::from_lower_string(&layout_string[..]); 
+
+        //let layout = layout::BASE;
+
+
+        evaluator::evaluate_layout(existing_ngram_list, layout);
     //run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
 
 	// match  quartads {

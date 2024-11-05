@@ -50,6 +50,7 @@ use chrono::Utc;
 //use dashmap::DashMap;
 use itertools::Itertools;
 use jwalk::Parallelism;
+use rand::Rng;
 use rayon::{
     iter::{
         IndexedParallelIterator,
@@ -69,6 +70,7 @@ use std::{
     slice::Iter,
     sync::Arc,
 };
+use penalty::*;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct KeyFrequency {
@@ -390,9 +392,9 @@ pub fn evaluate_by_ngram_frequency(ngram_list: NgramList) {
                 .multi_cartesian_product() {
                 let mut single_layout: KeyMap = [(); NUM_OF_KEYS].map(|_| ' ');
 
-                single_layout[31] = 'e';
-                single_layout[34] = 't';
-                single_layout[35] = '\n';
+                 single_layout[31] = 'e';
+                 single_layout[34] = 't';
+                 single_layout[35] = '\n';
 
                 for kp in combination.iter().flatten() {
                     single_layout[kp.position as usize] = kp.key as char;
@@ -2255,6 +2257,35 @@ pub struct LayoutAssignmentTrigram {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LayoutAssignmentTrigramSmall {
+    pub index: usize,
+    pub trigram: String,
+    pub tripos: [usize; 3],
+    pub total_penalty: f64,
+    pub variant_trigram: Vec<String>,
+    pub variant_pos: Vec<[usize; 3]>,
+    // pub relation: ListNgramRelationMappingNested,
+    // pub penalty: evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>,
+    // pub trigram_tripos_variant_penalty_group: TrigramTriPosVariantPenaltyGroup,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LayoutAssignmentOrderSmall<const N: usize> {
+    #[serde(with = "serde_arrays")]
+    pub layout_assignment: [String; layout::NUM_OF_KEYS],
+    pub assignment_ordering: Vec<LayoutAssignmentTrigramSmall>,
+}
+
+impl LayoutAssignmentOrderSmall<{ layout::NUM_OF_KEYS }> {
+    pub fn new() -> LayoutAssignmentOrderSmall<{ layout::NUM_OF_KEYS }> {
+        LayoutAssignmentOrderSmall {
+            layout_assignment: [(); layout::NUM_OF_KEYS].map(|_| "".to_string()),
+            assignment_ordering: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LayoutAssignmentOrder<const N: usize> {
     #[serde(with = "serde_arrays")]
     pub layout_assignment: [String; layout::NUM_OF_KEYS],
@@ -2302,6 +2333,8 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
 
     let position_penalties = evaluate_position_penalty();
 
+    //println!("penalties first: {:?}", position_penalties.clone().first());
+
     println!("penalties loaded: {:?}", position_penalties.len());
 
     let mut trigram_combinations = evaluate_trigram_combinations();
@@ -2342,7 +2375,7 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
         trigram_combinations.clone()
     );
 
-    println!("tri pos variants: {:?}", trigram_variants.len());
+    println!("tri gram variants: {:?}", trigram_variants.len());
 
     let trigram_variant_hashmap = evaluate_trigram_variant_hashmap(trigram_variants.clone());
 
@@ -2351,6 +2384,24 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
             trigram_variants.clone(),
             tripos_variants.clone()
         );
+
+    println!("valid repeating trigram tripos loaded");
+
+    let mut trigram_frequencies = evaluate_trigram_frequencies(
+        trigram_combinations.clone()
+    );
+
+    println!("trigram frequencies loaded");
+
+    let trigram_frequencies_list = trigram_frequencies.clone().into_iter().map(|item|{ return (item.0,item.1)}).collect_vec();
+
+    // for freq in trigram_frequencies.clone() {
+    //     for duplicate_frequency in trigram_frequencies_list.clone().into_iter().filter(|item|{item.0 != freq.0 && item.1.partial_cmp(&freq.1).unwrap() == Ordering::Equal }){
+    //         println!("duplicate frequency for {:?} - {:?} : {:?}", freq.0, duplicate_frequency.0, duplicate_frequency.1);
+    //     }
+    // }
+
+    // println!("trigram_frequencies len: {:?}", trigram_frequencies.len());
 
     // let variant_position_penalty = position_penalties.clone()
     // .into_iter()
@@ -2393,8 +2444,13 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                     .map(|ngram| {
                         return (ngram.0, ngram.1);
                     })
-                    .sorted_by(|(_, frequency1), (_, frequency2)|
-                        frequency1.partial_cmp(&frequency2).unwrap().reverse()
+                    .sorted_by(|(ngram1, frequency1), (ngram2, frequency2)|{
+                        return chain_ordering_first_reversed(
+                            frequency1.partial_cmp(&frequency2),
+                            ngram1.partial_cmp(&ngram2)
+                            
+                        );
+                    }
                     )
                     .collect(),
                 invalid_positions: Vec::new(),
@@ -2404,7 +2460,11 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
 
     //sort based on frequency
     ngram_relation_list.sort_by(|relation1, relation2| {
-        relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
+        return chain_ordering_first_reversed(
+            relation1.frequency.partial_cmp(&relation2.frequency),
+            relation1.ngram.partial_cmp(&relation2.ngram)
+        );
+        //relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
     });
 
     let mut used_position: HashMap<usize, char> = HashMap::new();
@@ -2434,30 +2494,88 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
 
     let ngram_relation_ngrams = ngram_relation.clone().ngrams;
 
+    //NOTE: different ngrams can have same frequency leading to inconsistent sorting order
     let mut ngram_relation_list_nested: Vec<ListNgramRelationMappingNested> = ngram_relation
         .clone()
         .ngrams.into_iter()
         .map(|relation| {
+            let parent_0 = trigram_frequencies.get(&relation.0.to_lowercase());
+            match parent_0 {
+               Some(_) => (),
+               None => println!("parent_0: '{}' - {}", &relation.0, relation.1.frequency),
+           }
+           let parent_0_adjusted_frequency = trigram_frequencies.get(&relation.0.to_lowercase()).unwrap();
+           //let total_parent_0 = (*parent_0_adjusted_frequency as f64 * 0.2) as usize + relation.1.frequency;
+           let total_parent_0 = relation.1.frequency;
+
+        //    if relation.0 == " th"  {
+        //         println!("PARENT TH FREQUENCY: '{}' - {}", &relation.0, relation.1.frequency)
+        //    }
+
             ListNgramRelationMappingNested {
-                ngram: relation.0,
-                frequency: relation.1.frequency,
+                ngram: relation.0.clone(),
+                frequency: total_parent_0,
                 standalone: true,
                 after_map: relation.1.after_map.map
                     .into_iter()
                     .map(|ngram| {
+                        let aftermap_0 = trigram_frequencies.get(&ngram.0.to_lowercase());
+                        match aftermap_0 {
+                           Some(_) => (),
+                           None => println!("child_0: '{}' - {}", &ngram.0, ngram.1),
+                       }
+                       let aftermap_0_adjusted_frequency = trigram_frequencies.get(&ngram.0.to_lowercase()).unwrap();
+                       //let total_aftermap_0 = (total_parent_0 as f64 * 0.2) as usize + (*aftermap_0_adjusted_frequency as f64 * 0.2) as usize + ngram.1;
+                       let total_aftermap_0 = ngram.1;
+                       if relation.0 == "too" || relation.0 == "te " || relation.0 == "ton"|| relation.0 == "t a" {
+                        //println!("child: {:?} [{:?}] ({:?}-{:?}) under parent {:?} [{:?}] ({:?} - {:?})", &ngram.0, total_aftermap_0, ngram.1, aftermap_0_adjusted_frequency, &relation.0, total_parent_0, relation.1.frequency, parent_0_adjusted_frequency);
+                       }
+                       if ngram.0 == "too" || ngram.0 == "te " || ngram.0 == "ton" || ngram.0 == "t a"{
+                        //println!("aftermap child: {:?} [{:?}] ({:?}-{:?}) under parent {:?} [{:?}] ({:?} - {:?})", &ngram.0, total_aftermap_0, ngram.1, aftermap_0_adjusted_frequency, &relation.0, total_parent_0, relation.1.frequency, parent_0_adjusted_frequency);
+                       }
                         return ListNgramRelationMappingNested {
                             ngram: ngram.0,
-                            frequency: ngram.1,
+                            frequency: total_aftermap_0,
                             standalone: false,
                             after_map: Vec::new(),
                         };
                     })
                     .sorted_by(|aftermapping1, aftermapping2|
-                        aftermapping1.frequency
-                            .partial_cmp(&aftermapping1.frequency)
-                            .unwrap()
-                            .reverse()
+                        {
+                            // return aftermapping1.frequency.partial_cmp(&aftermapping2.frequency)
+                            // .unwrap()
+                            // .reverse()        
+                            return chain_ordering_first_reversed(
+                                aftermapping1.frequency.partial_cmp(&aftermapping2.frequency),
+                                aftermapping1.ngram.partial_cmp(&aftermapping2.ngram)
+                            );         
+                        }
+                        
                     )
+                    // .sorted_by(|aftermapping1, aftermapping2|
+                    //     {
+                    //         let missing_1 = trigram_frequencies.get(&aftermapping1.ngram.to_lowercase());
+                    //              match missing_1 {
+                    //                 Some(_) => (),
+                    //                 None => println!("aftermapping1: '{}' - {}", &aftermapping1.ngram, aftermapping1.frequency),
+                    //             }
+                    //          let missing_2 = trigram_frequencies.get(&aftermapping2.ngram.to_lowercase());
+                    //          match missing_2 {
+                    //             Some(_) => (),
+                    //             None => println!("aftermapping2: '{}' - {}", &aftermapping2.ngram, aftermapping2.frequency),
+                    //         }
+                    //         let aftermapping1_adjusted_frequency = trigram_frequencies.get(&aftermapping1.ngram.to_lowercase()).unwrap();
+                    //         let aftermapping2_adjusted_frequency = trigram_frequencies.get(&aftermapping2.ngram.to_lowercase()).unwrap();
+
+                    //         let total_aftermapping1 = (total_parent_0 * 0.2) + aftermapping1_adjusted_frequency * 0.2 + aftermapping1.frequency as f64;
+                    //         let total_aftermapping2 = (total_parent_0 * 0.2) +aftermapping2_adjusted_frequency * 0.2 + aftermapping2.frequency as f64;                    
+
+                    //         return total_aftermapping1.partial_cmp(&total_aftermapping2)
+                    //         .unwrap()
+                    //         .reverse()                 
+                    //     }
+                        
+                    // )
                     .collect(),
             }
         })
@@ -2465,25 +2583,135 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
 
     //sort based on frequency
     ngram_relation_list_nested.sort_by(|relation1, relation2| {
-        relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
+        return chain_ordering_first_reversed(
+            relation1.frequency.partial_cmp(&relation2.frequency),
+            relation1.ngram.partial_cmp(&relation2.ngram)
+        );   
+         //relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
     });
+//     ngram_relation_list_nested.sort_by(|relation1, relation2| {
+//         let missing_relation1 = trigram_frequencies.get(&relation1.ngram.to_lowercase());
+//         match missing_relation1 {
+//            Some(_) => (),
+//            None => println!("relation1: '{}' - {}", &relation1.ngram, relation1.frequency),
+//        }
+//     let missing_relation2 = trigram_frequencies.get(&relation2.ngram.to_lowercase());
+//     match missing_relation2 {
+//        Some(_) => (),
+//        None => println!("relation2: '{}' - {}", &relation2.ngram, relation2.frequency),
+//    }
+//         let relation1_adjusted_frequency = trigram_frequencies.get(&relation1.ngram.to_lowercase()).unwrap();
+//         let relation2_adjusted_frequency = trigram_frequencies.get(&relation2.ngram.to_lowercase()).unwrap();
 
-    let mut layoutAssignment: LayoutAssignmentOrder<
-        {
-            layout::NUM_OF_KEYS
-        }
-    > = LayoutAssignmentOrder::new();
+//         let total_relation1 = relation1_adjusted_frequency * 0.2 + relation1.frequency as f64;
+//         let total_relation2 = relation2_adjusted_frequency * 0.2 + relation2.frequency as f64;
+
+//         return total_relation1.partial_cmp(&total_relation2)
+//         .unwrap()
+//         .reverse()
+//     });
+
+   // println!("ngram_relation_list_nested {:?}", ngram_relation_list_nested.len());
+
+   //println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[0]);
+  // println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[0]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[2]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[3]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[4]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[5]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[6]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[7]);
+//    println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[8]);
+//     println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[100]);
+//     println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[101]);
+//     println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[102]);
+//     println!("ngram_relation_list_nested 100 {:?}", ngram_relation_list_nested[103]);
+//     println!("ngram_relation_list_nested 1100 {:?}", ngram_relation_list_nested[1100]);
+//     println!("ngram_relation_list_nested 2100 {:?}", ngram_relation_list_nested[2100]);
+//     println!("ngram_relation_list_nested 4100 {:?}", ngram_relation_list_nested[4100]);
+//     println!("ngram_relation_list_nested 5100 {:?}", ngram_relation_list_nested[5100]);
+//     println!("ngram_relation_list_nested 6100 {:?}", ngram_relation_list_nested[6100]);
+//     println!("ngram_relation_list_nested 7100 {:?}", ngram_relation_list_nested[7100]);
+//     println!("ngram_relation_list_nested 8100 {:?}", ngram_relation_list_nested[8100]);
+
+    // let mut layoutAssignment: LayoutAssignmentOrder<
+    //     {
+    //         layout::NUM_OF_KEYS
+    //     }
+    // > = LayoutAssignmentOrder::new();
+
+    let mut layoutAssignment: LayoutAssignmentOrderSmall<
+    {
+        layout::NUM_OF_KEYS
+    }
+    > = LayoutAssignmentOrderSmall::new();
 
     let mut ngram_queue: Vec<ListNgramRelationMappingNested> = Vec::new();
-    for relation in ngram_relation_list_nested {
-    //.drain(0..5)
+    let mut after_ngram_queue: Vec<ListNgramRelationMappingNested> = Vec::new();
+    for relation in ngram_relation_list_nested.clone()//.drain(0..1500) 
+    {
+        
+    
     //.collect::<Vec<ListNgramRelationMappingNested>>()
-        ngram_queue.push(relation);
+        ngram_queue.push(relation.clone());
+        
+
+        // for after_map in relation.after_map{
+
+        //     after_ngram_queue.push(after_map);
+        // }
     }
 
+    let trigram_count = ngram_relation_list_nested.clone().len();
+
+    let mut all_assigned_char_position_hashmap: HashMap<char, usize> = HashMap::with_capacity(trigram_count);
+    let mut all_assigned_tripos_list: Vec<usize> = Vec::with_capacity(trigram_count);
+    let mut all_assigned_trigram_list: Vec<String> = Vec::with_capacity(trigram_count);
+
+    // for (ngram) in ngram_queue.clone().into_iter(){
+    //     if ngram.ngram == "too" || ngram.ngram == "te " || ngram.ngram == "ton" || ngram.ngram == "t a" {
+    //         println!("ngram relation from queue {:?}", ngram);
+    //     }
+        
+    // }
+
+    //for (top_index, relation) in ngram_queue.clone().into_iter().enumerate() {
+     //   for (child_index,duplicate_frequency) in ngram_queue.clone().into_iter().enumerate().filter(|(index,item)|{item.ngram != relation.ngram && item.frequency.partial_cmp(&relation.frequency).unwrap() == Ordering::Equal }){
+            //println!("duplicate frequency for ({:?}){:?} [{:?}] - ({:?}){:?} : {:?}", top_index,relation.ngram, relation.frequency, child_index,duplicate_frequency.ngram,duplicate_frequency.frequency);
+     //   }
+    //}
+
+    println!("ngram_queue {:?}", ngram_queue.len());
+
+    // println!("ngram_queue 0 {:?}", ngram_queue[0]);
+    // println!("ngram_queue 1 {:?}", ngram_queue[1]);
+    // println!("ngram_queue 2 {:?}", ngram_queue[2]);
+    // println!("ngram_queue 4 {:?}", ngram_queue[3]);
+    // println!("ngram_queue 6 {:?}", ngram_queue[4]);
+    // println!("ngram_queue 8 {:?}", ngram_queue[5]);
+    // println!("ngram_queue 2 {:?}", ngram_queue[6]);
+    // println!("ngram_queue 4 {:?}", ngram_queue[7]);
+    // println!("ngram_queue 6 {:?}", ngram_queue[8]);
+    // println!("ngram_queue 8 {:?}", ngram_queue[9]);
+    // println!("ngram_queue 10 {:?}", ngram_queue[10]);
+     println!("ngram_queue 1000 {:?}", ngram_queue[1000]);
+    //println!("ngram_queue 2000 {:?}", ngram_queue[2000]);
+    //println!("ngram_queue 3000 {:?}", ngram_queue[3000]);
+    //println!("ngram_queue 4000 {:?}", ngram_queue[4000]);
+    //println!("ngram_queue 5000 {:?}", ngram_queue[5000]);
+    //println!("ngram_queue 6000 {:?}", ngram_queue[6000]);
+    // println!("ngram_queue 10000 {:?}", ngram_queue[10000]);
+    // println!("ngram_queue 30000 {:?}", ngram_queue[30000]);
+    // println!("ngram_queue 60000 {:?}", ngram_queue[60000]);
+    // println!("ngram_queue 80000 {:?}", ngram_queue[80000]);
+    // println!("ngram_queue 100000 {:?}", ngram_queue[100000]);
+    // println!("ngram_queue 120000 {:?}", ngram_queue[120000]);
+
+    println!("------------------------START-------------------------");
     while ngram_queue.len() > 0 {
+        //println!("------------------------START-------------------------");
         let best_trigram: ListNgramRelationMappingNested = ngram_queue[0].clone();
-        println!("queue: {:?}", best_trigram.ngram);
+        //println!("queue: {:?}", best_trigram.ngram);
         let ngrams: Vec<char> = best_trigram.ngram.chars().collect();
 
         let character0 = ngrams[0];
@@ -2525,11 +2753,12 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 .unwrap()
                 .to_vec();
 
+            //TODO this is only at the top level, which ignores aftermap variants
             let mut trigram_relation_variants: Vec<NgramListRelation> = Vec::new();
 
             //get all relations/frequencies for each trigram variant
             for trigram_variant in trigram_variants {
-                println!("variant {:?}", trigram_variant.clone());
+               // println!("variant {:?}", trigram_variant.clone());
                 match ngram_relation_ngrams.get(&trigram_variant) {
                     Some(relation) => {
                         trigram_relation_variants.push(relation.clone());
@@ -2539,10 +2768,14 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
             }
 
             trigram_relation_variants.sort_by(|trigram_relation1, trigram_relation2| {
-                trigram_relation1.frequency
-                    .partial_cmp(&trigram_relation2.frequency)
-                    .unwrap()
-                    .reverse()
+                return chain_ordering_first_reversed(
+                    trigram_relation1.frequency.partial_cmp(&trigram_relation2.frequency),
+                    trigram_relation1.ngram.partial_cmp(&trigram_relation2.ngram)
+                );  
+                // trigram_relation1.frequency
+                //     .partial_cmp(&trigram_relation2.frequency)
+                //     .unwrap()
+                //     .reverse()
             });
 
             let mut total_trigram_tripos_variant_penalized_list: Vec<TrigramTriPosVariantPenaltyGroup> =
@@ -2632,7 +2865,7 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                     total_trigram_tripos_variant1.total_penalty
                         .partial_cmp(&total_trigram_tripos_variant2.total_penalty)
                         .unwrap()
-                        .reverse()
+                        //.reverse()
                 }
             );
 
@@ -2657,70 +2890,120 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 .map(|variant| variant.tripos)
                 .collect::<Vec<[usize; 3]>>();
 
-            layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+            println!("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+            // println!("total_trigram_tripos_variant_penalized_list {:?}", total_trigram_tripos_variant_penalized_list.clone());
+            // println!("---------------------------------------------");
+            // println!("trigram_tripos_variant_penalty {:?}", total_trigram_tripos_variant_penalized_list[0].clone());
+            // println!("---------------------------------------------");
+            // println!("variant_penalty {:?}", variant_penalty.clone());
+            // println!("---------------------------------------------");
+            // println!("variant_penalty_trigrams {:?}", variant_penalty_trigrams.clone());
+            // println!("---------------------------------------------");
+            // println!("variant_penalty_triposes {:?}", variant_penalty_triposes.clone());
+            println!("trigram_tripos_variant_penalty {:?}", total_trigram_tripos_variant_penalized_list[0].clone());
+            println!("---------------------------------------------");
+            println!("trigram_tripos_variant_penalty {:?}", total_trigram_tripos_variant_penalized_list[1].clone());
+            println!("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+
+            // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+            //     index: 0,
+            //     trigram: best_trigram.ngram.clone(),
+            //     tripos: variant_penalty.tripos,
+            //     total_penalty: trigram_tripos_variant_penalty.total_penalty,
+            //     variant_trigram: variant_penalty_trigrams,
+            //     variant_pos: variant_penalty_triposes,
+            //     relation: best_trigram.clone(),
+            //     penalty: variant_penalty.penalty,
+            //     trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+            // });
+
+            for (index, character) in  best_trigram.ngram.clone().chars().enumerate() {
+                let position = variant_penalty.tripos[index];
+                if !all_assigned_tripos_list.contains(&position){
+                    all_assigned_tripos_list.push(position);
+                }
+                
+                all_assigned_char_position_hashmap.entry(character).or_insert(position);
+            }
+
+            layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigramSmall {
                 index: 0,
                 trigram: best_trigram.ngram.clone(),
                 tripos: variant_penalty.tripos,
                 total_penalty: trigram_tripos_variant_penalty.total_penalty,
                 variant_trigram: variant_penalty_trigrams,
-                variant_pos: variant_penalty_triposes,
-                relation: best_trigram.clone(),
-                penalty: variant_penalty.penalty,
-                trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+                variant_pos: variant_penalty_triposes
             });
+
+            let mut firstT:bool = false;
+            if best_trigram.ngram.contains('t') {
+                println!("#####################################################");
+                println!("best trigram for t: {:?}", best_trigram.ngram.clone());
+                println!("all pos list at t: {:?}", all_assigned_tripos_list.clone());
+                println!("all assigned char at t: {:?}", all_assigned_char_position_hashmap.clone());
+                println!("layout assignent at t: {:?}", layoutAssignment.assignment_ordering.clone());
+                println!("#####################################################");
+            }
         } else {
-            let mut all_assigned_trigrams: Vec<String> = Vec::new();
-            let mut all_assigned_tripos: Vec<usize> = Vec::new();
-            let mut all_unassigned_after_map_relations: Vec<ListNgramRelationMappingNested> =
-                Vec::new();
-            let mut all_position_trigram_mappings: HashMap<char, usize> = HashMap::new();
+            //let mut all_assigned_trigrams: Vec<String> = Vec::new();
+            //let mut all_assigned_tripos_list: Vec<usize> = Vec::new();
+            //let mut all_unassigned_after_map_relations: Vec<ListNgramRelationMappingNested> =
+            //    Vec::new();
+            //let mut all_position_trigram_mappings: HashMap<char, usize> = HashMap::new();
+
+            let mut all_without_clearing: Vec<(char, usize)> = Vec::new();
 
             for assignment in layoutAssignment.assignment_ordering.clone() {
-                let mut assigned_trigrams = layoutAssignment.assignment_ordering
-                    .clone()
-                    .into_iter()
-                    .flat_map(|assignedTrigram| assignedTrigram.variant_trigram)
-                    .collect::<Vec<String>>();
-                all_assigned_trigrams.append(&mut assigned_trigrams.clone());
+                // let mut assigned_trigrams = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assignedTrigram| assignedTrigram.variant_trigram)
+                //     .collect::<Vec<String>>();
+                // all_assigned_trigrams.append(&mut assigned_trigrams.clone());
 
-                let mut assigned_tripos = layoutAssignment.assignment_ordering
-                    .clone()
-                    .into_iter()
-                    .flat_map(|assignedTrigram|
-                        assignedTrigram.variant_pos.into_iter().flat_map(|tripos| tripos)
-                    )
-                    .collect::<Vec<usize>>();
-                all_assigned_tripos.append(&mut assigned_tripos.clone());
+                // let mut assigned_tripos = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assignedTrigram|
+                //         assignedTrigram.variant_pos.into_iter().flat_map(|tripos| tripos)
+                //     )
+                //     .collect::<Vec<usize>>();
+                // all_assigned_tripos_list.append(&mut assigned_tripos.clone());
 
-                let mut unassigned_after_map_trigrams = assignment.relation.after_map
-                    .clone()
-                    .into_iter()
-                    .filter(|unassigned_trigram|
-                        assigned_trigrams.contains(&unassigned_trigram.ngram)
-                    )
-                    .collect::<Vec<ListNgramRelationMappingNested>>();
-                all_unassigned_after_map_relations.append(
-                    &mut unassigned_after_map_trigrams.clone()
-                );
+                // let mut unassigned_after_map_trigrams = assignment.relation.after_map
+                //     .clone()
+                //     .into_iter()
+                //     .filter(|unassigned_trigram|
+                //         assigned_trigrams.contains(&unassigned_trigram.ngram)
+                //     )
+                //     .collect::<Vec<ListNgramRelationMappingNested>>();
+                // all_unassigned_after_map_relations.append(
+                //     &mut unassigned_after_map_trigrams.clone()
+                // );
 
-                let mut assigned_position_trigram_mapping = layoutAssignment.assignment_ordering
-                    .clone()
-                    .into_iter()
-                    .flat_map(|assigned| {
-                        let chars: Vec<char> = assigned.trigram.chars().collect();
-                        return [
-                            (chars[0], assigned.tripos[0]),
-                            (chars[1], assigned.tripos[1]),
-                            (chars[2], assigned.tripos[2]),
-                        ].to_vec();
-                    })
-                    .collect::<Vec<(char, usize)>>();
+                // let mut assigned_position_trigram_mapping = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assigned| {
+                //         let chars: Vec<char> = assigned.trigram.chars().collect();
+                //         return [
+                //             (chars[0], assigned.tripos[0]),
+                //             (chars[1], assigned.tripos[1]),
+                //             (chars[2], assigned.tripos[2]),
+                //         ].to_vec();
+                //     })
+                //     .collect::<Vec<(char, usize)>>();
 
-                for (character, position) in assigned_position_trigram_mapping {
-                    all_position_trigram_mappings.entry(character).or_insert(position);
-                }
+                   
+                //     all_without_clearing.append(&mut assigned_position_trigram_mapping.clone());
 
-                
+
+                // for (character, position) in assigned_position_trigram_mapping.clone() {
+                //     all_position_trigram_mappings.entry(character).or_insert(position);
+                // }
+
+   
+
 
                 //if(assignment.trigram.after_map.fi)
                 //loop through all existing ordering items
@@ -2730,33 +3013,55 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 //need to determine how to handle aftermap vs standalone trigrams
                 //ngram_queue.insert(0, best_trigram);
             }
+            //println!("all_assigned_trigrams len: {:?}", all_assigned_trigrams.len());
+            //println!("all_assigned_tripos_list len: {:?}", all_assigned_tripos_list.len());
+
+            // all_assigned_trigrams.sort();
+            // all_assigned_tripos_list.sort();
+            // all_assigned_trigrams.dedup();
+            // all_assigned_tripos_list.dedup();
+
+            // all_without_clearing.sort();
+            // all_without_clearing.dedup();
+
+            // println!("------------------------ASSIGN-------------------------");
+            // println!("all_without_clearing: {:?}", all_without_clearing);
+            // println!("------------------------ASSIGN-------------------------");
 
             //get all variants for current trigram
-            let trigram_variants = trigram_variant_hashmap
+            let mut trigram_variants: Vec<String> = Vec::new();
+            match trigram_variant_hashmap
                 .get(&best_trigram.ngram)
-                .unwrap()
-                .to_vec();
+                {
+                None => {
+                    println!("trigram variants missing for: {:?}", best_trigram.ngram);
+                }
+                Some(list) => {
+                    trigram_variants = list.to_vec();
+                }
+            }
+                
 
             //get any position filters for characters already assigned
             let mut position_0_filter = 999;
             let mut position_1_filter = 999;
             let mut position_2_filter = 999;
 
-            match all_position_trigram_mappings.get(&character0) {
+            match all_assigned_char_position_hashmap.get(&character0) {
                 None => {}
                 Some(position) => {
                     position_0_filter = *position;
                 }
             }
 
-            match all_position_trigram_mappings.get(&character1) {
+            match all_assigned_char_position_hashmap.get(&character1) {
                 None => {}
                 Some(position) => {
                     position_1_filter = *position;
                 }
             }
 
-            match all_position_trigram_mappings.get(&character2) {
+            match all_assigned_char_position_hashmap.get(&character2) {
                 None => {}
                 Some(position) => {
                     position_2_filter = *position;
@@ -2771,14 +3076,25 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
             let pos_1_filter_set = position_1_filter != 999;
             let pos_2_filter_set = position_2_filter != 999;
 
+            let all_filters_set = pos_0_filter_set && pos_1_filter_set && pos_2_filter_set;
             let no_filters_set = pos_0_filter_not_set && pos_1_filter_not_set && pos_2_filter_not_set;
             let only_pos_0_filter_set = pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_not_set;
             let only_pos_1_filter_set = pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_not_set;
             let only_pos_2_filter_set = pos_0_filter_not_set && pos_1_filter_not_set && pos_2_filter_set;
+            let two_filters_set = 
+            (
+                pos_0_filter_set && pos_1_filter_set && pos_2_filter_not_set
+            ) ||
+            (
+                pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_set
+            ) ||
+            (
+                pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_set
+            );
 
-            let only_pos_0_1_filters_match = pos_0_filter_set && pos_1_filter_set && position_0_filter == position_1_filter && (pos_2_filter_not_set || position_0_filter != position_2_filter);
-            let only_pos_0_2_filters_match = pos_0_filter_set && pos_2_filter_set && position_0_filter == position_2_filter && (pos_1_filter_not_set || position_1_filter != position_2_filter);
-            let only_pos_1_2_filters_match = pos_1_filter_set && pos_2_filter_set && position_1_filter == position_2_filter && (pos_0_filter_not_set || position_0_filter != position_1_filter);
+            let only_pos_0_1_filters_match = pos_0_filter_set && pos_1_filter_set && position_0_filter == position_1_filter && position_0_filter != position_2_filter;
+            let only_pos_0_2_filters_match = pos_0_filter_set && pos_2_filter_set && position_0_filter == position_2_filter && position_1_filter != position_2_filter;
+            let only_pos_1_2_filters_match = pos_1_filter_set && pos_2_filter_set && position_1_filter == position_2_filter && position_0_filter != position_1_filter;
 
             let two_duplicate_filters =
                 (
@@ -2804,25 +3120,21 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 position_0_filter == position_1_filter &&
                 position_1_filter == position_2_filter;
 
-            let no_filters_match = 
-            position_0_filter != position_1_filter &&
+                let no_filters_match = 
+                position_0_filter != position_1_filter &&
             position_1_filter != position_2_filter;
 
-            if best_trigram.ngram == " a " {
-                println!("position_0_filter {:?}", position_0_filter);
-                println!("position_1_filter {:?}", position_1_filter);
-                println!("position_2_filter {:?}", position_2_filter);
-            }
 
             //TODO also need to take into account certain characters already assigned to a position
 
             let already_assigned_trigram = trigram_variants
                 .clone()
                 .into_iter()
-                .any(|variant| all_assigned_trigrams.contains(&variant));
+                .any(|variant| all_assigned_trigram_list.contains(&variant));
 
             //some variant of the next trigram has been assigned already
             if already_assigned_trigram {
+                //println!("already_assigned_trigram {:?}", best_trigram.ngram);
                 //TODO - handle case when already exists
             } else {
                 //get filtered list of valid position variants based on trigram and already assigned positions
@@ -2831,15 +3143,86 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 //     if best_trigram.ngram == " a " {
                 //         println!("tripos_variants_penalised {:?}", tripos_variants_penalised.len());
                 //     }
-                println!("position_0_filter {:?}", position_0_filter);
-                println!("position_1_filter {:?}", position_1_filter);
-                println!("position_2_filter {:?}", position_2_filter);
+                // println!("position_0_filter {:?}", position_0_filter);
+                // println!("position_1_filter {:?}", position_1_filter);
+                // println!("position_2_filter {:?}", position_2_filter);
+                // println!("all_assigned_tripos_list {:?}", all_assigned_tripos_list);
 
-                if best_trigram.ngram == " eh" || best_trigram.ngram == " he" || best_trigram.ngram == "e h" || best_trigram.ngram == "eh " || best_trigram.ngram == "h e" || best_trigram.ngram == "he " {
-                    println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
-                }
+                //if position_0_filter == position_1_filter && position_0_filter == position_2_filter {
+                   // println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                //}
 
+            //     if best_trigram.ngram.clone() == "all" {
+            //     println!("position_0_filter {:?}", position_0_filter);
+            //     println!("position_1_filter {:?}", position_1_filter);
+            //     println!("position_2_filter {:?}", position_2_filter);
+            //     let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //     .clone()
+            //     .into_iter()
+            //     .filter(|variants| {
+            //         return 
+            //             variants.len() > 0 &&
+            //             ((variants[0].tripos[0] == 1 &&
+            //             variants[0].tripos[1] == 35 &&
+            //             variants[0].tripos[2] == 35) ||
+            //             (variants[0].tripos[0] == 35 &&
+            //             variants[0].tripos[1] == 35 &&
+            //             variants[0].tripos[2] == 1) ||
+            //             (variants[0].tripos[0] == 35 &&
+            //             variants[0].tripos[1] == 1 &&
+            //             variants[0].tripos[2] == 35)
+            //     )
+            // })
+            // .collect::<Vec<Vec<TriPosPenalty>>>();
+            // println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            //     }
 
+            //     if best_trigram.ngram.clone() == "ill" {
+            //     println!("position_0_filter {:?}", position_0_filter);
+            //     println!("position_1_filter {:?}", position_1_filter);
+            //     println!("position_2_filter {:?}", position_2_filter);
+            //     let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //     .clone()
+            //     .into_iter()
+            //     .filter(|variants| {
+            //         return 
+            //         variants.len() > 0 &&
+            //         ((variants[0].tripos[0] == 15 &&
+            //         variants[0].tripos[1] == 35 &&
+            //         variants[0].tripos[2] == 35) ||
+            //         (variants[0].tripos[0] == 35 &&
+            //         variants[0].tripos[1] == 35 &&
+            //         variants[0].tripos[2] == 15) ||
+            //         (variants[0].tripos[0] == 35 &&
+            //         variants[0].tripos[1] == 15 &&
+            //         variants[0].tripos[2] == 35)
+            //     )
+            // })
+            // .collect::<Vec<Vec<TriPosPenalty>>>();
+            // println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            //     }
+
+            //     if best_trigram.ngram.clone() == "lly" {
+            //         let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //         .clone()
+            //         .into_iter()
+            //         .filter(|variants| {
+            //             return 
+            //                 variants.len() > 0 &&
+            //                 ((variants[0].tripos[0] == 35 &&
+            //                 variants[0].tripos[1] == 35 &&
+            //                 variants[0].tripos[2] == 29) ||
+            //                 (variants[0].tripos[0] == 35 &&
+            //                 variants[0].tripos[1] == 29 &&
+            //                 variants[0].tripos[2] == 35) ||
+            //                 (variants[0].tripos[0] == 29 &&
+            //                 variants[0].tripos[1] == 35 &&
+            //                 variants[0].tripos[2] == 35)
+            //         )
+            //     })
+            //     .collect::<Vec<Vec<TriPosPenalty>>>();
+            //     println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            // }
 
                 let mut filtered_position_penalties_variants = tripos_variants_penalised
                         .clone()
@@ -2848,16 +3231,22 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                             return (
                                 variants.len() > 0 &&
                                 //filter out already assigned positions
-                                // !all_assigned_tripos.contains(&variants[0].tripos[0]) &&
-                                // !all_assigned_tripos.contains(&variants[0].tripos[1]) &&
-                                // !all_assigned_tripos.contains(&variants[0].tripos[2]) &&
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                 //filter valid positions for characters which have existing 
                                 (
                                     
-                                (no_filters_set) ||
+                                (
+                                    no_filters_set &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[2])
+                                ) ||
                                 (
                                     all_matching_filters &&
                                     (
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
                                         variants[0].tripos[0] == position_0_filter &&
                                         variants[0].tripos[1] == position_0_filter &&
                                         variants[0].tripos[2] == position_0_filter
@@ -2867,16 +3256,25 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                     only_pos_0_filter_set &&
                                     (
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] == position_0_filter &&
                                             variants[0].tripos[1] != position_0_filter &&
                                             variants[0].tripos[2] != position_0_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] != position_0_filter &&
                                             variants[0].tripos[1] == position_0_filter &&
                                             variants[0].tripos[2] != position_0_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                             variants[0].tripos[0] != position_0_filter &&
                                             variants[0].tripos[1] != position_0_filter &&
                                             variants[0].tripos[2] == position_0_filter
@@ -2887,16 +3285,25 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                     only_pos_1_filter_set &&
                                     (
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] == position_1_filter &&
                                             variants[0].tripos[1] != position_1_filter &&
                                             variants[0].tripos[2] != position_1_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] != position_1_filter &&
                                             variants[0].tripos[1] == position_1_filter &&
                                             variants[0].tripos[2] != position_1_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                             variants[0].tripos[0] != position_1_filter &&
                                             variants[0].tripos[1] != position_1_filter &&
                                             variants[0].tripos[2] == position_1_filter
@@ -2907,16 +3314,25 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                     only_pos_2_filter_set &&
                                     (
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] == position_2_filter &&
                                             variants[0].tripos[1] != position_2_filter &&
                                             variants[0].tripos[2] != position_2_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                             variants[0].tripos[0] != position_2_filter &&
                                             variants[0].tripos[1] == position_2_filter &&
                                             variants[0].tripos[2] != position_2_filter
                                         ) ||
                                         (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                             variants[0].tripos[0] != position_2_filter &&
                                             variants[0].tripos[1] != position_2_filter &&
                                             variants[0].tripos[2] == position_2_filter
@@ -2925,20 +3341,27 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                 )||
                                 (
                                     two_duplicate_filters && 
-                                    (
+                                    ((
                                         only_pos_0_1_filters_match &&
+                                        pos_2_filter_not_set &&
                                         (
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                                 variants[0].tripos[0] == position_0_filter &&
                                                 variants[0].tripos[1] == position_0_filter &&
                                                 variants[0].tripos[2] != position_0_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                                 variants[0].tripos[0] == position_0_filter &&
                                                 variants[0].tripos[2] == position_0_filter &&
                                                 variants[0].tripos[1] != position_0_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
                                                 variants[0].tripos[1] == position_0_filter &&
                                                 variants[0].tripos[2] == position_0_filter &&
                                                 variants[0].tripos[0] != position_0_filter
@@ -2947,18 +3370,25 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                     ) ||
                                     (
                                         only_pos_0_2_filters_match &&
+                                        pos_1_filter_not_set &&
                                         (
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                                 variants[0].tripos[0] == position_2_filter &&
                                                 variants[0].tripos[1] == position_2_filter &&
                                                 variants[0].tripos[2] != position_2_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                                 variants[0].tripos[0] == position_2_filter &&
                                                 variants[0].tripos[2] == position_2_filter &&
                                                 variants[0].tripos[1] != position_2_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
                                                 variants[0].tripos[1] == position_2_filter &&
                                                 variants[0].tripos[2] == position_2_filter &&
                                                 variants[0].tripos[0] != position_2_filter
@@ -2967,92 +3397,285 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                     ) ||
                                     (
                                         only_pos_1_2_filters_match &&
+                                        pos_0_filter_not_set &&
                                         (
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                                 variants[0].tripos[0] == position_1_filter &&
                                                 variants[0].tripos[1] == position_1_filter &&
                                                 variants[0].tripos[2] != position_1_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
                                                 variants[0].tripos[0] == position_1_filter &&
                                                 variants[0].tripos[2] == position_1_filter &&
                                                 variants[0].tripos[1] != position_1_filter
                                             ) ||
                                             (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
                                                 variants[0].tripos[1] == position_1_filter &&
                                                 variants[0].tripos[2] == position_1_filter &&
                                                 variants[0].tripos[0] != position_1_filter
                                             )
                                         ) 
+                                    ) ||
+                                    (
+                                        only_pos_0_1_filters_match &&
+                                        pos_2_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] != position_0_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[1] != position_0_filter &&
+                                                variants[0].tripos[1] == position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[0] != position_0_filter &&
+                                                variants[0].tripos[0] == position_2_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_0_2_filters_match &&
+                                        pos_1_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] != position_2_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[1] != position_2_filter &&
+                                                variants[0].tripos[1] == position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[0] != position_2_filter &&
+                                                variants[0].tripos[0] == position_1_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_1_2_filters_match &&
+                                        pos_0_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] != position_1_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[1] != position_1_filter &&
+                                                variants[0].tripos[1] == position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[0] != position_1_filter &&
+                                                variants[0].tripos[0] == position_0_filter
+                                            )
+                                        ) 
                                     )
+                                )
                                 ) ||
                                 (
                                     no_filters_match &&
                                     (
+                                    (
+                                        all_filters_set &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                                         (
-                                            pos_0_filter_not_set ||
-                                            (pos_0_filter_set &&
                                             (
-                                                (
-                                                    variants[0].tripos[0] == position_0_filter &&
-                                                    variants[0].tripos[1] != position_0_filter &&
-                                                    variants[0].tripos[2] != position_0_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_0_filter &&
-                                                    variants[0].tripos[1] == position_0_filter &&
-                                                    variants[0].tripos[2] != position_0_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_0_filter &&
-                                                    variants[0].tripos[1] != position_0_filter &&
-                                                    variants[0].tripos[2] == position_0_filter
-                                                )
-                                            ))
-                                        ) ||
-                                        (
-                                            pos_1_filter_not_set ||
-                                            (pos_1_filter_set &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            )||
                                             (
-                                                (
-                                                    variants[0].tripos[0] == position_1_filter &&
-                                                    variants[0].tripos[1] != position_1_filter &&
-                                                    variants[0].tripos[2] != position_1_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_1_filter &&
-                                                    variants[0].tripos[1] == position_1_filter &&
-                                                    variants[0].tripos[2] != position_1_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_1_filter &&
-                                                    variants[0].tripos[1] != position_1_filter &&
-                                                    variants[0].tripos[2] == position_1_filter
-                                                )
-                                            ))
-                                        ) ||
-                                        (
-                                            pos_2_filter_not_set ||
-                                            (pos_2_filter_set &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            )||
                                             (
-                                                (
-                                                    variants[0].tripos[0] == position_2_filter &&
-                                                    variants[0].tripos[1] != position_2_filter &&
-                                                    variants[0].tripos[2] != position_2_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_2_filter &&
-                                                    variants[0].tripos[1] == position_2_filter &&
-                                                    variants[0].tripos[2] != position_2_filter
-                                                )||
-                                                (
-                                                    variants[0].tripos[0] != position_2_filter &&
-                                                    variants[0].tripos[1] != position_2_filter &&
-                                                    variants[0].tripos[2] == position_2_filter
-                                                )
-                                            ))
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            )
                                         )
+                                    ) || 
+
+                                    (
+                                        two_filters_set &&
+                                        (
+                                        (
+                                            (
+                                                pos_0_filter_set && 
+                                                pos_1_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[1] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[1] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )
+                                                )
+                                            )
+                                        ) ||
+                                        (
+                                            (
+                                                pos_0_filter_set && 
+                                                pos_2_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[1] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[1] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )
+                                                )
+                                            )
+                                        ) ||
+                                        (
+                                            (
+                                                pos_1_filter_set && 
+                                                pos_2_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[1] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[1] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )
+                                                )
+                                            )
+                                        ) 
+                                    )
                                     ) 
+                                    )
                                 )
                                 ) &&
                                 //this should deal with the leaky filter above not constraining duplicate characters
@@ -3077,9 +3700,9 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 //             |variants|
                 //                 variants.len() > 0 &&
                 //                 //filter out already assigned positions
-                //                 // !all_assigned_tripos.contains(&variants[0].tripos[0]) &&
-                //                 // !all_assigned_tripos.contains(&variants[0].tripos[1]) &&
-                //                 // !all_assigned_tripos.contains(&variants[0].tripos[2]) &&
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
                 //                 //filter valid positions for characters which have existing positions
                 //                 (position_0_filter == 999 ||
                 //                     (position_0_filter != 999 &&
@@ -3110,16 +3733,16 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 //         .collect::<Vec<Vec<TriPosPenalty>>>();
                 // }
 
-                if best_trigram.ngram == " a " {
-                    println!("{:?}", filtered_position_penalties_variants.clone());
-                }
+                // if best_trigram.ngram == "ook" {
+                //     println!("{:?}", filtered_position_penalties_variants.clone());
+                // }
 
                 let mut trigram_relation_variants: Vec<NgramListRelation> = Vec::new();
                 let mut non_existent_trigram_variants: Vec<String> = Vec::new();
 
                 //get all relations/frequencies for each trigram variant
-                for trigram_variant in trigram_variants {
-                    println!("variant {:?}", trigram_variant.clone());
+                for trigram_variant in trigram_variants.clone() {
+                    //println!("variant {:?}", trigram_variant.clone());
                     match ngram_relation_ngrams.get(&trigram_variant) {
                         Some(relation) => {
                             trigram_relation_variants.push(relation.clone());
@@ -3131,19 +3754,49 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                 }
 
                 trigram_relation_variants.sort_by(|trigram_relation1, trigram_relation2| {
-                    trigram_relation1.frequency
-                        .partial_cmp(&trigram_relation2.frequency)
-                        .unwrap()
-                        .reverse()
+                    // trigram_relation1.frequency
+                    //     .partial_cmp(&trigram_relation2.frequency)
+                    //     .unwrap()
+                    //     .reverse()
+                    return chain_ordering_first_reversed(
+                        trigram_relation1.frequency.partial_cmp(&trigram_relation2.frequency),
+                        trigram_relation1.ngram.partial_cmp(&trigram_relation2.ngram)
+                    );
                 });
 
                 let mut total_trigram_tripos_variant_penalized_list: Vec<TrigramTriPosVariantPenaltyGroup> =
                     Vec::new();
 
-                println!(
-                    "position variant available {:?}",
-                    filtered_position_penalties_variants.len()
-                );
+                // println!(
+                //     "position variant available {:?}",
+                //     filtered_position_penalties_variants.len()
+                // );
+                // println!(
+                //     "non_existent_trigram_variants {:?}",
+                //     non_existent_trigram_variants
+                // );
+
+                // if best_trigram.ngram.clone() == "ook"{
+                //     let filtered_matching_trigrams1 = trigram_variants
+                //     .clone()
+                //     .into_iter()
+                //     .filter(|variant| {
+                //         true
+                //     })
+                //     .collect::<Vec<String>>();
+                //     println!("-------------------------------------------------");
+                //     // println!("first_tripos: {:?}", first_tripos);
+                //     // println!("filter_tripos: {:?}", filter_tripos);
+
+                //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                //     //println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                //     println!("position_0_filter {:?}", position_0_filter);
+                //     println!("position_1_filter {:?}", position_1_filter);
+                //     println!("position_2_filter {:?}", position_2_filter);                      
+                //     println!("all_position_trigram_mappings {:?}", all_assigned_char_position_hashmap);
+                //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                //     println!("-------------------------------------------------");
+                // }
 
                 //assuming tripos penalty arrays are sorted earlier
                 for position_penalty_variant in filtered_position_penalties_variants {
@@ -3152,16 +3805,252 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                             total_penalty: 0.0,
                             variants: Vec::new(),
                         };
-                    let first_tripos = position_penalty_variant[0].clone();
-                    let first_trigram = trigram_relation_variants[0].clone();
+                    let first_tripos = position_penalty_variant[0].tripos.clone();    
+                    let first_tripos_penalty = position_penalty_variant[0].total.clone();      
+                    // let second_tripos_penalty = position_penalty_variant[1].total.clone();      
+                    // let second_tripos = position_penalty_variant[1].tripos.clone();  
+                    
                     let variant_count = position_penalty_variant.clone().len() as f64;
+
+                    let mut filter_tripos : [usize; 3] = [position_0_filter, position_1_filter, position_2_filter];
+
+                    let mut base_trigram_from_position = get_trigram_positions(
+                        filter_tripos,
+                        first_tripos,
+                        best_trigram.ngram.clone()
+                    );
+
+                    // println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    // println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    // println!("first_tripos: {:?} - {:?}", first_tripos, first_tripos_penalty);
+
+                    let filtered_matching_trigrams = trigram_variants
+                    .clone()
+                    .into_iter()
+                    .filter(|variant| {
+                        //true
+                        let variant_ngrams: Vec<char> = variant.chars().collect();
+                        (base_trigram_from_position.position_0_character == '_' ||
+                            base_trigram_from_position.position_0_character != '_' && 
+                            variant_ngrams[0] == base_trigram_from_position.position_0_character) &&
+                        (base_trigram_from_position.position_1_character == '_' ||
+                            base_trigram_from_position.position_1_character != '_' && 
+                            variant_ngrams[1] == base_trigram_from_position.position_1_character) &&
+                        (base_trigram_from_position.position_2_character == '_' ||
+                            base_trigram_from_position.position_2_character != '_' && 
+                            variant_ngrams[2] == base_trigram_from_position.position_2_character)
+                    })
+                    .collect::<Vec<String>>();
+
+                    // if best_trigram.ngram.clone().contains('y') || !best_trigram.ngram.clone().contains('u') {
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+                    // if((best_trigram.ngram.clone().contains('y') || best_trigram.ngram.clone().contains('l')) && !best_trigram.ngram.clone().contains('o')){
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+                    // if best_trigram.ngram.clone() == "ook"{
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+
+                    
+
+                    let first_trigram = filtered_matching_trigrams[0].clone();//WTF
+
+                    // let first_trigram_relation_variant = trigram_relation_variants
+                    // .clone()
+                    // .into_iter()
+                    // .filter(|variant| {
+                    //     let variant_ngrams: Vec<char> = variant.ngram.chars().collect();
+                    //     (base_trigram_from_position.position_0_character == '_' ||
+                    //         base_trigram_from_position.position_0_character != '_' && 
+                    //         variant_ngrams[0] == base_trigram_from_position.position_0_character) &&
+                    //     (base_trigram_from_position.position_1_character == '_' ||
+                    //         base_trigram_from_position.position_1_character != '_' && 
+                    //         variant_ngrams[1] == base_trigram_from_position.position_1_character) &&
+                    //     (base_trigram_from_position.position_2_character == '_' ||
+                    //         base_trigram_from_position.position_2_character != '_' && 
+                    //         variant_ngrams[2] == base_trigram_from_position.position_2_character)
+                    // })
+                    // .map(|relation| (relation.ngram, relation.frequency))
+                    // .collect::<Vec<(String, usize)>>();
+
+                    // let penalties = position_penalty_variant.clone().into_iter()
+                    // .map(|relation| (relation.tripos, relation.total))
+                    // .collect::<Vec<([usize; 3], f64)>>();
+
+                    // println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    // println!("first_tripos: {:?} - {:?}", first_tripos, first_tripos_penalty);
+                    // println!("second_tripos: {:?} - {:?}", second_tripos, second_tripos_penalty);
+                    // println!("filter_tripos: {:?}", filter_tripos);
+                    // println!("penalties: {:?}", penalties);
+                    //println!("first_trigram_relation_variant: {:?}", first_trigram);
+
+                    // let mut trigram_position = get_position_from_trigram(
+                    //     first_tripos,
+                    //     first_trigram.ngram.clone(),
+                    //     non_existing_trigram
+                    // );
+
+                    //ndt - 1,999,999
+
+                    //ndt
+                    //[999,999,3]
+
+                    //[3,5,8]
+
+                    
+
+                    //choose one with higher frequency
+                    
+
+
+                    //ndt - 1,5,6   1,6,5
+                    //ntd - 1,6,3
+
+                    //dtn
+                    //dnt
+
+                    //tnd
+                    //tdn
+
+                    //determine which of the first tripos can map to the filter tripos
+                    //using the new first tripos as base determine the rest
+                    
+                    
+                    
+                    
+                    //let mut filter_tripos : [usize; 3] = [3, 999, 10];
+                    //let mut filter_tripos : [usize; 3] = [3, 21, 10];
+                    // if pos_0_filter_set && pos_1_filter_set && pos_2_filter_set {
+                    //     let mut base_trigram_position = get_trigram_positions(
+                    //         filter_tripos,
+                    //         first_tripos,
+                    //         best_trigram.ngram.clone()
+                    //     );
+                    // }
+                    // else {
+                    //     if pos_0_filter_set && pos_1_filter_set && pos_2_filter_not_set {
+                    //         if first_tripos[0] != filter_tripos[0] || first_tripos[0] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] || first_tripos[1] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] || first_tripos[2] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_set {
+                    //         if first_tripos[0] != filter_tripos[0] || first_tripos[0] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] || first_tripos[1] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] || first_tripos[2] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_set {
+                    //         if first_tripos[0] != filter_tripos[1] || first_tripos[0] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[1] || first_tripos[1] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[1] || first_tripos[2] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_not_set {
+                    //         if first_tripos[0] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    // }
+
+                    // let mut base_trigram_position = get_trigram_positions(
+                    //     first_tripos,
+                    //     first_tripos,
+                    //     base_ngram
+                    // );
+
+                    //let base_tripos : [usize; 3] = [base_trigram_position.position_0_character, base_trigram_position.position_1_character, base_trigram_position.position_2_character];
+
+                    //let mut filter_tripos : [usize; 3] = [3, 999, 999];
+                    //let mut filter_tripos : [usize; 3] = [999, 999, 999];
+                    //let mut filter_tripos : [usize; 3] = [position_0_filter, position_1_filter, position_2_filter];
 
                     let mut non_existent_tripos_variants: Vec<[usize; 3]> = Vec::new();
 
                     for non_existing_trigram in non_existent_trigram_variants.clone() {
+
                         let mut trigram_position = get_position_from_trigram(
-                            first_tripos.tripos,
-                            first_trigram.ngram.clone(),
+                            first_tripos,
+                            first_trigram.clone(),
                             non_existing_trigram
                         );
                         non_existent_tripos_variants.push([
@@ -3175,31 +4064,10 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                         .into_iter()
                         .filter(|pos| !non_existent_tripos_variants.contains(&pos.tripos))
                         .enumerate() {
-                        if index == 0 {
-                            let trigram_relation_variant = trigram_relation_variants[0].clone();
-
-                            //calculate each trigram tripos variant score and total
-                            let total_score =
-                                (trigram_relation_variant.frequency as f64) * tripos_penalty.total;
-
-                            trigram_tripos_variant_penalty_group.total_penalty =
-                                trigram_tripos_variant_penalty_group.total_penalty +
-                                total_score / variant_count;
-
-                            let trigram_tripos_variant_penalty = TrigramTriPosVariantPenalty {
-                                trigram: trigram_relation_variant.ngram,
-                                tripos: tripos_penalty.tripos,
-                                trigram_tripos_penalty: total_score,
-                                penalty: tripos_penalty.penalty,
-                            };
-                            trigram_tripos_variant_penalty_group.variants.push(
-                                trigram_tripos_variant_penalty
-                            );
-                        } else {
                             let mut trigram_position = get_trigram_positions(
-                                first_tripos.tripos,
+                                first_tripos,
                                 tripos_penalty.tripos,
-                                first_trigram.ngram.clone()
+                                first_trigram.clone()
                             );
                             let matching_trigram = [
                                 trigram_position.position_0_character.to_string(),
@@ -3207,7 +4075,9 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                 trigram_position.position_2_character.to_string(),
                             ].join("");
 
-                            println!("matching_trigram: {:?}", matching_trigram);
+                            //println!("first_tripos: {:?}", first_tripos);
+                            //println!("tripos_penalty: {:?}", tripos_penalty.tripos);
+                            //println!("matching_trigram: {:?}", matching_trigram);
                             //bad hack that needs a better way
                             let trigram_relation_variant = trigram_relation_variants
                                 .clone()
@@ -3234,7 +4104,6 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                                 trigram_tripos_variant_penalty
                             );
                         }
-                    }
 
                     total_trigram_tripos_variant_penalized_list.push(
                         trigram_tripos_variant_penalty_group
@@ -3246,10 +4115,13 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                         total_trigram_tripos_variant1.total_penalty
                             .partial_cmp(&total_trigram_tripos_variant2.total_penalty)
                             .unwrap()
-                            .reverse()
                     }
                 );
+                // println!("total_trigram_tripos_variant_penalized_list first: {:?} - {:?}", total_trigram_tripos_variant_penalized_list[0].variants[0].trigram,total_trigram_tripos_variant_penalized_list[0].total_penalty);
+                // println!("total_trigram_tripos_variant_penalized_list last: {:?} - {:?}", total_trigram_tripos_variant_penalized_list[total_trigram_tripos_variant_penalized_list.len()-1].variants[0].trigram,total_trigram_tripos_variant_penalized_list[total_trigram_tripos_variant_penalized_list.len()-1].total_penalty);
+                
 
+                if total_trigram_tripos_variant_penalized_list.len() > 0 {
                 let trigram_tripos_variant_penalty =
                     total_trigram_tripos_variant_penalized_list[0].clone();
                 let variant_penalty = trigram_tripos_variant_penalty.variants
@@ -3271,17 +4143,46 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
                     .map(|variant| variant.tripos)
                     .collect::<Vec<[usize; 3]>>();
 
-                layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+                // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+                //     index: layoutAssignment.assignment_ordering.len() - 1,
+                //     trigram: best_trigram.ngram.clone(),
+                //     tripos: variant_penalty.tripos,
+                //     total_penalty: trigram_tripos_variant_penalty.total_penalty,
+                //     variant_trigram: variant_penalty_trigrams,
+                //     variant_pos: variant_penalty_triposes,
+                //     relation: best_trigram.clone(),
+                //     penalty: variant_penalty.penalty,
+                //     trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+                // });
+
+                for (index, character) in  best_trigram.ngram.clone().chars().enumerate() {
+                    let position = variant_penalty.tripos[index];
+                    if !all_assigned_tripos_list.contains(&position){
+                        all_assigned_tripos_list.push(position);
+                    }
+                    
+                    all_assigned_char_position_hashmap.entry(character).or_insert(position);
+                }
+
+                if !all_assigned_trigram_list.contains(&best_trigram.ngram.clone()){
+                    all_assigned_trigram_list.push(best_trigram.ngram.clone());
+                }
+
+                layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigramSmall {
                     index: layoutAssignment.assignment_ordering.len() - 1,
                     trigram: best_trigram.ngram.clone(),
                     tripos: variant_penalty.tripos,
                     total_penalty: trigram_tripos_variant_penalty.total_penalty,
                     variant_trigram: variant_penalty_trigrams,
-                    variant_pos: variant_penalty_triposes,
-                    relation: best_trigram.clone(),
-                    penalty: variant_penalty.penalty,
-                    trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+                    variant_pos: variant_penalty_triposes
                 });
+                //println!("layoutAssignment tripos: {:?}", variant_penalty.tripos);
+                //println!("layoutAssignment ngram: {:?}", best_trigram.ngram.clone());
+                }   
+                else{
+                    println!("no possible assignment for: {:?}", best_trigram.ngram.clone());
+                }
+                
             }
 
             // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
@@ -3295,7 +4196,33 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
         ngram_queue.remove(0);
     }
 
-    println!("layout assignment: {:?}", layoutAssignment);
+    let total_combined_penalty= layoutAssignment.assignment_ordering
+    .into_iter()
+    .map(|assignment|assignment.total_penalty)
+    .reduce(|acc, item|{
+        return item + acc
+    }).unwrap();
+
+    println!("layout assignment: {:?}", total_combined_penalty);
+    //println!("layout assignment: {:?}", layoutAssignment);
+    println!("all_assigned_char_position_hashmap: {:?}", all_assigned_char_position_hashmap);
+
+    let mut single_layout: KeyMap = [(); NUM_OF_KEYS].map(|_| '#');
+
+    for (key, position) in all_assigned_char_position_hashmap.into_iter() {
+        single_layout[position as usize] = key as char;
+    }
+
+    println!("single_layout: '{:?}'", single_layout);
+
+    let map: String = String::from_iter(single_layout);
+    println!("layout: '{:?}'", map);
+
+    let map2: String = single_layout.into_iter().join("");
+    println!("layout2: '{:?}'", map2);
+
+   
+    
 
     println!("-----------------------TEST-----------------------");
     //println!("ngram_relation_list len: {:?}", ngram_relation_list.len());
@@ -3730,6 +4657,1790 @@ pub fn evaluate_relation(ngram_relation: NgramListRelationMapping) {
     // println!("{:?}", ngram_relation_list[1]);
 }
 
+pub fn evaluate_layout(ngram_relation: NgramListRelationMapping, layout: Layout) {
+    let layout_char_positions = layout.get_character_positions();
+
+    let position_penalties = evaluate_position_penalty();
+
+    println!("penalties loaded: {:?}", position_penalties.len());
+
+    let mut trigram_combinations = evaluate_trigram_combinations();
+
+    println!("trigram_combinations: {:?}", trigram_combinations.len());
+
+    let mut position_combinations = evaluate_position_combinations();
+
+    println!("position_combinations: {:?}", position_combinations.len());
+
+    let position_penalties_hashmap = evaluate_position_penalty_hashmap(
+        position_combinations.clone()
+    );
+
+    println!("hashmap penalties loaded: {:?}", position_penalties_hashmap.len());
+
+    let mut trigram_tripos_combinations = evaluate_trigram_tripos_combinations(
+        trigram_combinations.clone(),
+        position_combinations.clone()
+    );
+
+    println!("tri len: {:?}", trigram_tripos_combinations.len());
+
+    let mut trigram_tripos_filter = evaluate_trigram_tripos_filter(
+        trigram_combinations.clone(),
+        position_combinations.clone()
+    );
+
+    println!("filter len: {:?}", trigram_tripos_filter.len());
+
+    let mut tripos_variants: Vec<Vec<[usize; 3]>> = evaluate_tripos_variants(
+        position_combinations.clone()
+    );
+
+    println!("tri pos variants: {:?}", tripos_variants.len());
+
+    let mut trigram_variants: Vec<Vec<String>> = evaluate_trigram_variants(
+        trigram_combinations.clone()
+    );
+
+    println!("tri pos variants: {:?}", trigram_variants.len());
+
+    let trigram_variant_hashmap = evaluate_trigram_variant_hashmap(trigram_variants.clone());
+
+    let trigram_variant_valid_repeating_tripos_hashmap =
+        evaluate_trigram_variant_valid_repeating_tripos_hashmap(
+            trigram_variants.clone(),
+            tripos_variants.clone()
+        );
+
+    let mut trigram_frequencies = evaluate_trigram_frequencies(
+        trigram_combinations.clone()
+    );
+
+    println!("trigram_frequencies len: {:?}", trigram_frequencies.len());
+
+    // let variant_position_penalty = position_penalties.clone()
+    // .into_iter()
+    // .filter(
+    //     |penalty|
+    //         (parent_has_ngram_doubling_letter == false &&
+    //             penalty.tri_pos[0] != penalty.tri_pos[1] &&
+    //             penalty.tri_pos[1] != penalty.tri_pos[2] &&
+    //             penalty.tri_pos[0] != penalty.tri_pos[2]) ||
+    //         (parent_has_ngram_doubling_letter == true &&
+    //             parent_trigram_tripos_combination.contains(&penalty.tri_pos))
+    // )
+    // .collect::<Vec<evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>>();
+
+    let mut tripos_variants_penalised: Vec<Vec<TriPosPenalty>> = evaluate_tripos_variants_penalised(
+        tripos_variants.clone(),
+        position_penalties_hashmap.clone()
+    );
+    println!("tri pos variants penalised: {:?}", tripos_variants_penalised.len());
+
+    let mut tripos_variants_penalised_hashmap: HashMap<
+        String,
+        Vec<TriPosPenalty>
+    > = evaluate_tripos_variants_penalised_hashmap(tripos_variants_penalised.clone());
+    println!("tri pos variants penalised hashmap: {:?}", tripos_variants_penalised_hashmap.len());
+
+    //let position_penalties = evaluate_position_penalty_orderings(position_penalties.clone(), ngram_relation.clone());
+    //println!("filter len: {:?}", trigram_tripos_filter.len());
+
+    //convert hashmap to vec
+    let mut ngram_relation_list: Vec<ListNgramRelationMapping> = ngram_relation
+        .clone()
+        .ngrams.into_iter()
+        .map(|relation| {
+            ListNgramRelationMapping {
+                ngram: relation.0,
+                frequency: relation.1.frequency,
+                after_map: relation.1.after_map.map
+                    .into_iter()
+                    .map(|ngram| {
+                        return (ngram.0, ngram.1);
+                    })
+                    .sorted_by(|(_, frequency1), (_, frequency2)|
+                        frequency1.partial_cmp(&frequency2).unwrap().reverse()
+                    )
+                    .collect(),
+                invalid_positions: Vec::new(),
+            }
+        })
+        .collect::<Vec<ListNgramRelationMapping>>();
+
+    //sort based on frequency
+    ngram_relation_list.sort_by(|relation1, relation2| {
+        relation1.frequency.partial_cmp(&relation2.frequency).unwrap().reverse()
+    });
+
+    let ngram_relation_ngrams = ngram_relation.clone().ngrams;
+
+    let mut ngram_relation_list_nested: Vec<ListNgramRelationMappingNested> = ngram_relation
+        .clone()
+        .ngrams.into_iter()
+        .map(|relation| {
+            let parent_0 = trigram_frequencies.get(&relation.0.to_lowercase());
+            match parent_0 {
+               Some(_) => (),
+               None => println!("parent_0: '{}' - {}", &relation.0, relation.1.frequency),
+           }
+           let parent_0_adjusted_frequency = trigram_frequencies.get(&relation.0.to_lowercase()).unwrap();
+           let total_parent_0 = (*parent_0_adjusted_frequency as f64 * 0.2) as usize + relation.1.frequency;
+
+            ListNgramRelationMappingNested {
+                ngram: relation.0,
+                frequency: total_parent_0,
+                standalone: true,
+                after_map: relation.1.after_map.map
+                    .into_iter()
+                    .map(|ngram| {
+                        let aftermap_0 = trigram_frequencies.get(&ngram.0.to_lowercase());
+                        match aftermap_0 {
+                           Some(_) => (),
+                           None => println!("parent_0: '{}' - {}", &ngram.0, ngram.1),
+                       }
+                       let aftermap_0_adjusted_frequency = trigram_frequencies.get(&ngram.0.to_lowercase()).unwrap();
+                       let total_aftermap_0 = (total_parent_0 as f64 * 0.1) as usize + (*aftermap_0_adjusted_frequency as f64 * 0.2) as usize + ngram.1;
+
+                        return ListNgramRelationMappingNested {
+                            ngram: ngram.0,
+                            frequency: total_aftermap_0,
+                            standalone: false,
+                            after_map: Vec::new(),
+                        };
+                    })
+                    .sorted_by(|aftermapping1, aftermapping2|
+                        {
+                            return aftermapping1.frequency.partial_cmp(&aftermapping2.frequency)
+                            .unwrap()
+                            .reverse()                 
+                        }
+                    )
+                    // .sorted_by(|aftermapping1, aftermapping2|
+                    //     {
+                    //         let missing_1 = trigram_frequencies.get(&aftermapping1.ngram.to_lowercase());
+                    //              match missing_1 {
+                    //                 Some(_) => (),
+                    //                 None => println!("aftermapping1: '{}' - {}", &aftermapping1.ngram, aftermapping1.frequency),
+                    //             }
+                    //          let missing_2 = trigram_frequencies.get(&aftermapping2.ngram.to_lowercase());
+                    //          match missing_2 {
+                    //             Some(_) => (),
+                    //             None => println!("aftermapping2: '{}' - {}", &aftermapping2.ngram, aftermapping2.frequency),
+                    //         }
+                    //         let aftermapping1_adjusted_frequency = trigram_frequencies.get(&aftermapping1.ngram.to_lowercase()).unwrap();
+                    //         let aftermapping2_adjusted_frequency = trigram_frequencies.get(&aftermapping2.ngram.to_lowercase()).unwrap();
+
+                    //         let total_aftermapping1 = aftermapping1_adjusted_frequency * 0.05 + aftermapping1.frequency as f64;
+                    //         let total_aftermapping2 = aftermapping2_adjusted_frequency * 0.05 + aftermapping2.frequency as f64;                    
+
+                    //         return total_aftermapping1.partial_cmp(&total_aftermapping2)
+                    //         .unwrap()
+                    //         .reverse()                 
+                    //     }
+                        
+                    // )
+                    .collect(),
+            }
+        })
+        .collect::<Vec<ListNgramRelationMappingNested>>();
+
+    //sort based on frequency
+    ngram_relation_list_nested.sort_by(|relation1, relation2| {
+        relation1.frequency.partial_cmp(&relation2.frequency).unwrap()
+    });
+//     ngram_relation_list_nested.sort_by(|relation1, relation2| {
+//         let missing_relation1 = trigram_frequencies.get(&relation1.ngram.to_lowercase());
+//         match missing_relation1 {
+//            Some(_) => (),
+//            None => println!("relation1: '{}' - {}", &relation1.ngram, relation1.frequency),
+//        }
+//     let missing_relation2 = trigram_frequencies.get(&relation2.ngram.to_lowercase());
+//     match missing_relation2 {
+//        Some(_) => (),
+//        None => println!("relation2: '{}' - {}", &relation2.ngram, relation2.frequency),
+//    }
+        
+//         let relation1_adjusted_frequency = trigram_frequencies.get(&relation1.ngram.to_lowercase()).unwrap();
+//         let relation2_adjusted_frequency = trigram_frequencies.get(&relation2.ngram.to_lowercase()).unwrap();
+
+//         let total_relation1 = relation1_adjusted_frequency * 0.05 + relation1.frequency as f64;
+//         let total_relation2 = relation2_adjusted_frequency * 0.05 + relation2.frequency as f64;
+
+//         return total_relation1.partial_cmp(&total_relation2)
+//         .unwrap()
+//         .reverse()
+//     });
+
+    let mut ngram_queue: Vec<ListNgramRelationMappingNested> = Vec::new();
+    for relation in ngram_relation_list_nested.clone() {
+        
+    //.drain(0..5)
+    //.collect::<Vec<ListNgramRelationMappingNested>>()
+        ngram_queue.push(relation.clone());
+
+        for after_map in relation.after_map{
+            ngram_queue.push(after_map);
+        }
+    }
+
+    let trigram_count = ngram_relation_list_nested.clone().len();
+
+    let mut all_assigned_char_position_hashmap: HashMap<char, usize> = HashMap::with_capacity(trigram_count);
+    let mut all_assigned_tripos_list: Vec<usize> = Vec::with_capacity(trigram_count);
+    let mut all_assigned_trigram_list: Vec<String> = Vec::with_capacity(trigram_count);
+
+    println!("ngram_queue {:?}", ngram_queue.len());
+
+    let mut layoutAssignment: LayoutAssignmentOrderSmall<
+    {
+        layout::NUM_OF_KEYS
+    }
+    > = LayoutAssignmentOrderSmall::new();
+
+    println!("------------------------START-------------------------");
+    while ngram_queue.len() > 0 {
+        // if(ngram_queue.len() % 1000)
+        // println!("queue length: {:?}", ngram_queue.len());
+        //println!("------------------------START-------------------------");
+        let best_trigram: ListNgramRelationMappingNested = ngram_queue[0].clone();
+        //println!("queue: {:?}", best_trigram.ngram);
+        let ngrams: Vec<char> = best_trigram.ngram.chars().collect();
+
+        let character0 = ngrams[0];
+        let character1 = ngrams[1];
+        let character2 = ngrams[2];
+
+        let parent_has_ngram_doubling_letter =
+            trigram_variant_valid_repeating_tripos_hashmap.contains_key(&best_trigram.ngram);
+        let mut parent_trigram_tripos_combination: Vec<[usize; 3]> = Vec::new();
+        if parent_has_ngram_doubling_letter {
+            parent_trigram_tripos_combination = trigram_variant_valid_repeating_tripos_hashmap
+                .get(&best_trigram.ngram)
+                .unwrap()
+                .to_vec();
+        }
+
+        if 0 == 0 {
+            let character0_position = layout_char_positions.binary_search_by(|probe|probe.cmp(&character0)).ok().unwrap();
+            let character1_position = layout_char_positions.binary_search_by(|probe|probe.cmp(&character1)).ok().unwrap();
+            let character2_position = layout_char_positions.binary_search_by(|probe|probe.cmp(&character2)).ok().unwrap();
+
+            let mut trigram_variants: Vec<String> = Vec::new();
+            match trigram_variant_hashmap
+                .get(&best_trigram.ngram)
+                {
+                None => {
+                    println!("trigram variants missing for: {:?}", best_trigram.ngram);
+                }
+                Some(list) => {
+                    trigram_variants = list.to_vec();
+                }
+            }
+
+            let already_assigned_trigram = trigram_variants
+            .clone()
+            .into_iter()
+            .any(|variant| all_assigned_trigram_list.contains(&variant));
+
+            if already_assigned_trigram {
+                //println!("already_assigned_trigram {:?}", best_trigram.ngram);
+                continue;
+                //TODO - handle case when already exists
+            } 
+
+            //get filtered list of valid position variants based on trigram
+            let mut filtered_position_penalties_variants = tripos_variants_penalised
+                .clone()
+                .into_iter()
+                // .filter(
+                //     |variants|
+                //         //TODO verify that we dont break when getting positions when no variants for a position
+                //         variants.len() > 0 &&
+                //         //filter out positions that dont match trigram structure, eg duplicating letters
+                //         ((parent_has_ngram_doubling_letter == false &&
+                //             variants[0].tripos[0] != variants[0].tripos[1] &&
+                //             variants[0].tripos[1] != variants[0].tripos[2] &&
+                //             variants[0].tripos[0] != variants[0].tripos[2]) ||
+                //             (parent_has_ngram_doubling_letter == true &&
+                //                 parent_trigram_tripos_combination.contains(&variants[0].tripos)))
+                // )
+                .filter(
+                    |variants|
+                        //TODO verify that we dont break when getting positions when no variants for a position
+                        variants.len() > 0 &&
+                        //filter out positions that dont match trigram structure, eg duplicating letters
+                        ((variants[0].tripos[0] == character0_position &&
+                        variants[0].tripos[1] == character1_position &&
+                        variants[0].tripos[2] == character2_position) ||
+                        (variants[0].tripos[0] == character0_position &&
+                        variants[0].tripos[1] == character2_position &&
+                        variants[0].tripos[2] == character1_position) ||
+                        (variants[0].tripos[0] == character1_position &&
+                        variants[0].tripos[1] == character0_position &&
+                        variants[0].tripos[2] == character2_position) ||
+                        (variants[0].tripos[0] == character1_position &&
+                        variants[0].tripos[1] == character2_position &&
+                        variants[0].tripos[2] == character0_position) ||
+                        (variants[0].tripos[0] == character2_position &&
+                        variants[0].tripos[1] == character1_position &&
+                        variants[0].tripos[2] == character0_position) ||
+                        (variants[0].tripos[0] == character2_position &&
+                        variants[0].tripos[1] == character0_position &&
+                        variants[0].tripos[2] == character1_position)) 
+                )
+                .collect::<Vec<Vec<TriPosPenalty>>>();
+
+            //get all variants for current trigram
+            let trigram_variants = trigram_variant_hashmap
+                .get(&best_trigram.ngram)
+                .unwrap()
+                .to_vec();
+
+            //TODO this is only at the top level, which ignores aftermap variants
+            let mut trigram_relation_variants: Vec<NgramListRelation> = Vec::new();
+
+            //get all relations/frequencies for each trigram variant
+            for trigram_variant in trigram_variants {
+               // println!("variant {:?}", trigram_variant.clone());
+                match ngram_relation_ngrams.get(&trigram_variant) {
+                    Some(relation) => {
+                        trigram_relation_variants.push(relation.clone());
+                    }
+                    None => {}
+                }
+            }
+
+            trigram_relation_variants.sort_by(|trigram_relation1, trigram_relation2| {
+                trigram_relation1.frequency
+                    .partial_cmp(&trigram_relation2.frequency)
+                    .unwrap()
+                    .reverse()
+            });
+
+            let mut total_trigram_tripos_variant_penalized_list: Vec<TrigramTriPosVariantPenaltyGroup> =
+                Vec::new();
+
+            //assuming tripos penalty arrays are sorted earlier
+            for position_penalty_variant in filtered_position_penalties_variants {
+                let mut trigram_tripos_variant_penalty_group = TrigramTriPosVariantPenaltyGroup {
+                    total_penalty: 0.0,
+                    variants: Vec::new(),
+                };
+                //TODO investigate whether assigning like this could lead to not all variants having best pos
+                //eg the combined score of certain pairs could potentially outperform the primary inital pos
+                let first_tripos = position_penalty_variant[0].clone();
+                let first_trigram = trigram_relation_variants[0].clone();
+                let variant_count = position_penalty_variant.clone().len() as f64;
+
+                for (index, tripos_penalty) in position_penalty_variant.into_iter().enumerate() {
+                    if index == 0 {
+                        let trigram_relation_variant = trigram_relation_variants[0].clone();
+
+                        //calculate each trigram tripos variant score and total
+                        let total_score =
+                            (trigram_relation_variant.frequency as f64) * tripos_penalty.total;
+
+                        trigram_tripos_variant_penalty_group.total_penalty =
+                            trigram_tripos_variant_penalty_group.total_penalty +
+                            total_score / variant_count;
+
+                        let trigram_tripos_variant_penalty = TrigramTriPosVariantPenalty {
+                            trigram: trigram_relation_variant.ngram,
+                            tripos: tripos_penalty.tripos,
+                            trigram_tripos_penalty: total_score,
+                            penalty: tripos_penalty.penalty,
+                        };
+                        trigram_tripos_variant_penalty_group.variants.push(
+                            trigram_tripos_variant_penalty
+                        );
+                    } else {
+                        let mut trigram_position = get_trigram_positions(
+                            first_tripos.tripos,
+                            tripos_penalty.tripos,
+                            first_trigram.ngram.clone()
+                        );
+                        let matching_trigram = [
+                            trigram_position.position_0_character.to_string(),
+                            trigram_position.position_1_character.to_string(),
+                            trigram_position.position_2_character.to_string(),
+                        ].join("");
+
+                        //bad hack that needs a better way
+                        let trigram_relation_variant = trigram_relation_variants
+                            .clone()
+                            .into_iter()
+                            .filter(|variant| variant.ngram == matching_trigram)
+                            .collect::<Vec<NgramListRelation>>()[0]
+                            .clone();
+
+                        //TODO determine how/if the aftermap relation versions of trigrams need to be included
+                        //calculate each trigram tripos variant score and total
+                        let total_score =
+                            (trigram_relation_variant.frequency as f64) * tripos_penalty.total;
+
+                        trigram_tripos_variant_penalty_group.total_penalty =
+                            trigram_tripos_variant_penalty_group.total_penalty +
+                            total_score / variant_count;
+
+                        let trigram_tripos_variant_penalty = TrigramTriPosVariantPenalty {
+                            trigram: trigram_relation_variant.ngram,
+                            tripos: tripos_penalty.tripos,
+                            trigram_tripos_penalty: total_score,
+                            penalty: tripos_penalty.penalty,
+                        };
+                        trigram_tripos_variant_penalty_group.variants.push(
+                            trigram_tripos_variant_penalty
+                        );
+                    }
+                }
+
+                total_trigram_tripos_variant_penalized_list.push(
+                    trigram_tripos_variant_penalty_group
+                );
+            }
+
+            total_trigram_tripos_variant_penalized_list.sort_by(
+                |total_trigram_tripos_variant1, total_trigram_tripos_variant2| {
+                    total_trigram_tripos_variant1.total_penalty
+                        .partial_cmp(&total_trigram_tripos_variant2.total_penalty)
+                        .unwrap()
+                        //.reverse()
+                }
+            );
+
+            let trigram_tripos_variant_penalty =
+                total_trigram_tripos_variant_penalized_list[0].clone();
+            let variant_penalty = trigram_tripos_variant_penalty.variants
+                .clone()
+                .into_iter()
+                .filter(|variant| variant.trigram == best_trigram.ngram)
+                .collect::<Vec<TrigramTriPosVariantPenalty>>()[0]
+                .clone();
+
+            let variant_penalty_trigrams = trigram_tripos_variant_penalty.variants
+                .clone()
+                .into_iter()
+                .map(|variant| variant.trigram)
+                .collect::<Vec<String>>();
+
+            let variant_penalty_triposes = trigram_tripos_variant_penalty.variants
+                .clone()
+                .into_iter()
+                .map(|variant| variant.tripos)
+                .collect::<Vec<[usize; 3]>>();
+
+            // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+            //     index: 0,
+            //     trigram: best_trigram.ngram.clone(),
+            //     tripos: variant_penalty.tripos,
+            //     total_penalty: trigram_tripos_variant_penalty.total_penalty,
+            //     variant_trigram: variant_penalty_trigrams,
+            //     variant_pos: variant_penalty_triposes,
+            //     relation: best_trigram.clone(),
+            //     penalty: variant_penalty.penalty,
+            //     trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+            // });
+            let mut firstT:bool = false;
+            if best_trigram.ngram.contains('t') {
+                firstT = true;
+                println!("#####################################################");
+                println!("best trigram for t: {:?}", best_trigram.ngram.clone());
+                println!("all pos list at t: {:?}", all_assigned_tripos_list.clone());
+                println!("all assigned char at t: {:?}", all_assigned_char_position_hashmap.clone());
+                println!("layout assignent at t: {:?}", layoutAssignment.assignment_ordering.clone());
+                println!("#####################################################");
+            }
+
+            for (index, character) in  best_trigram.ngram.clone().chars().enumerate() {
+                let position = variant_penalty.tripos[index];
+                if !all_assigned_tripos_list.contains(&position){
+                    all_assigned_tripos_list.push(position);
+                }
+                
+                all_assigned_char_position_hashmap.entry(character).or_insert(position);
+            }
+
+            layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigramSmall {
+                index: 0,
+                trigram: best_trigram.ngram.clone(),
+                tripos: variant_penalty.tripos,
+                total_penalty: trigram_tripos_variant_penalty.total_penalty,
+                variant_trigram: variant_penalty_trigrams,
+                variant_pos: variant_penalty_triposes
+            });
+        } else {
+            //let mut all_assigned_trigrams: Vec<String> = Vec::new();
+            //let mut all_assigned_tripos_list: Vec<usize> = Vec::new();
+            //let mut all_unassigned_after_map_relations: Vec<ListNgramRelationMappingNested> =
+            //    Vec::new();
+            //let mut all_position_trigram_mappings: HashMap<char, usize> = HashMap::new();
+
+            let mut all_without_clearing: Vec<(char, usize)> = Vec::new();
+
+            //for assignment in layoutAssignment.assignment_ordering.clone() {
+                // let mut assigned_trigrams = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assignedTrigram| assignedTrigram.variant_trigram)
+                //     .collect::<Vec<String>>();
+                // all_assigned_trigrams.append(&mut assigned_trigrams.clone());
+
+                // let mut assigned_tripos = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assignedTrigram|
+                //         assignedTrigram.variant_pos.into_iter().flat_map(|tripos| tripos)
+                //     )
+                //     .collect::<Vec<usize>>();
+                // all_assigned_tripos_list.append(&mut assigned_tripos.clone());
+
+                // let mut unassigned_after_map_trigrams = assignment.relation.after_map
+                //     .clone()
+                //     .into_iter()
+                //     .filter(|unassigned_trigram|
+                //         assigned_trigrams.contains(&unassigned_trigram.ngram)
+                //     )
+                //     .collect::<Vec<ListNgramRelationMappingNested>>();
+                // all_unassigned_after_map_relations.append(
+                //     &mut unassigned_after_map_trigrams.clone()
+                // );
+
+                // let mut assigned_position_trigram_mapping = layoutAssignment.assignment_ordering
+                //     .clone()
+                //     .into_iter()
+                //     .flat_map(|assigned| {
+                //         let chars: Vec<char> = assigned.trigram.chars().collect();
+                //         return [
+                //             (chars[0], assigned.tripos[0]),
+                //             (chars[1], assigned.tripos[1]),
+                //             (chars[2], assigned.tripos[2]),
+                //         ].to_vec();
+                //     })
+                //     .collect::<Vec<(char, usize)>>();
+
+                   
+                //     all_without_clearing.append(&mut assigned_position_trigram_mapping.clone());
+
+
+                // for (character, position) in assigned_position_trigram_mapping.clone() {
+                //     all_position_trigram_mappings.entry(character).or_insert(position);
+                // }
+
+   
+
+
+                //if(assignment.trigram.after_map.fi)
+                //loop through all existing ordering items
+                //loop through each of their aftermaps to find ones which havent been assigned to ordering
+                //determine if an aftermap has a higher frequency than current trigram
+                //if frequency higher then add to queue and continue otherwise add new assignment
+                //need to determine how to handle aftermap vs standalone trigrams
+                //ngram_queue.insert(0, best_trigram);
+            //}
+            //println!("all_assigned_trigrams len: {:?}", all_assigned_trigrams.len());
+            //println!("all_assigned_tripos_list len: {:?}", all_assigned_tripos_list.len());
+
+            // all_assigned_trigrams.sort();
+            // all_assigned_tripos_list.sort();
+            // all_assigned_trigrams.dedup();
+            // all_assigned_tripos_list.dedup();
+
+            // all_without_clearing.sort();
+            // all_without_clearing.dedup();
+
+            // println!("------------------------ASSIGN-------------------------");
+            // println!("all_without_clearing: {:?}", all_without_clearing);
+            // println!("------------------------ASSIGN-------------------------");
+
+            //get all variants for current trigram
+            let mut trigram_variants: Vec<String> = Vec::new();
+            match trigram_variant_hashmap
+                .get(&best_trigram.ngram)
+                {
+                None => {
+                    println!("trigram variants missing for: {:?}", best_trigram.ngram);
+                }
+                Some(list) => {
+                    trigram_variants = list.to_vec();
+                }
+            }
+                
+
+            //get any position filters for characters already assigned
+            let mut position_0_filter = 999;
+            let mut position_1_filter = 999;
+            let mut position_2_filter = 999;
+
+            match all_assigned_char_position_hashmap.get(&character0) {
+                None => {}
+                Some(position) => {
+                    position_0_filter = *position;
+                }
+            }
+
+            match all_assigned_char_position_hashmap.get(&character1) {
+                None => {}
+                Some(position) => {
+                    position_1_filter = *position;
+                }
+            }
+
+            match all_assigned_char_position_hashmap.get(&character2) {
+                None => {}
+                Some(position) => {
+                    position_2_filter = *position;
+                }
+            }
+
+            let pos_0_filter_not_set = position_0_filter == 999;
+            let pos_1_filter_not_set = position_1_filter == 999;
+            let pos_2_filter_not_set = position_2_filter == 999;
+
+            let pos_0_filter_set = position_0_filter != 999;
+            let pos_1_filter_set = position_1_filter != 999;
+            let pos_2_filter_set = position_2_filter != 999;
+
+            let all_filters_set = pos_0_filter_set && pos_1_filter_set && pos_2_filter_set;
+            let no_filters_set = pos_0_filter_not_set && pos_1_filter_not_set && pos_2_filter_not_set;
+            let only_pos_0_filter_set = pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_not_set;
+            let only_pos_1_filter_set = pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_not_set;
+            let only_pos_2_filter_set = pos_0_filter_not_set && pos_1_filter_not_set && pos_2_filter_set;
+            let two_filters_set = 
+            (
+                pos_0_filter_set && pos_1_filter_set && pos_2_filter_not_set
+            ) ||
+            (
+                pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_set
+            ) ||
+            (
+                pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_set
+            );
+
+            let only_pos_0_1_filters_match = pos_0_filter_set && pos_1_filter_set && position_0_filter == position_1_filter && position_0_filter != position_2_filter;
+            let only_pos_0_2_filters_match = pos_0_filter_set && pos_2_filter_set && position_0_filter == position_2_filter && position_1_filter != position_2_filter;
+            let only_pos_1_2_filters_match = pos_1_filter_set && pos_2_filter_set && position_1_filter == position_2_filter && position_0_filter != position_1_filter;
+
+            let two_duplicate_filters =
+                (
+                    position_0_filter != 999 &&
+                    position_1_filter != 999 &&
+                    position_0_filter == position_1_filter
+                ) ||
+                (
+                    position_1_filter != 999 &&
+                    position_2_filter != 999 &&
+                    position_1_filter == position_2_filter
+                ) ||
+                (
+                    position_0_filter != 999 &&
+                    position_2_filter != 999 &&
+                    position_0_filter == position_2_filter
+                );
+
+            let all_matching_filters =
+                position_0_filter != 999 &&
+                position_1_filter != 999 &&
+                position_2_filter != 999 &&
+                position_0_filter == position_1_filter &&
+                position_1_filter == position_2_filter;
+
+                let no_filters_match = 
+                position_0_filter != position_1_filter &&
+            position_1_filter != position_2_filter;
+
+
+            //TODO also need to take into account certain characters already assigned to a position
+
+            let already_assigned_trigram = trigram_variants
+                .clone()
+                .into_iter()
+                .any(|variant| all_assigned_trigram_list.contains(&variant));
+
+            //some variant of the next trigram has been assigned already
+            if already_assigned_trigram {
+                //println!("already_assigned_trigram {:?}", best_trigram.ngram);
+                //TODO - handle case when already exists
+            } else {
+                //get filtered list of valid position variants based on trigram and already assigned positions
+                //let mut filtered_position_penalties_variants = Vec::new();
+                // if best_trigram.ngram == " a " {
+                //     if best_trigram.ngram == " a " {
+                //         println!("tripos_variants_penalised {:?}", tripos_variants_penalised.len());
+                //     }
+                // println!("position_0_filter {:?}", position_0_filter);
+                // println!("position_1_filter {:?}", position_1_filter);
+                // println!("position_2_filter {:?}", position_2_filter);
+                // println!("all_assigned_tripos_list {:?}", all_assigned_tripos_list);
+
+                //if position_0_filter == position_1_filter && position_0_filter == position_2_filter {
+                   // println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                //}
+
+            //     if best_trigram.ngram.clone() == "all" {
+            //     println!("position_0_filter {:?}", position_0_filter);
+            //     println!("position_1_filter {:?}", position_1_filter);
+            //     println!("position_2_filter {:?}", position_2_filter);
+            //     let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //     .clone()
+            //     .into_iter()
+            //     .filter(|variants| {
+            //         return 
+            //             variants.len() > 0 &&
+            //             ((variants[0].tripos[0] == 1 &&
+            //             variants[0].tripos[1] == 35 &&
+            //             variants[0].tripos[2] == 35) ||
+            //             (variants[0].tripos[0] == 35 &&
+            //             variants[0].tripos[1] == 35 &&
+            //             variants[0].tripos[2] == 1) ||
+            //             (variants[0].tripos[0] == 35 &&
+            //             variants[0].tripos[1] == 1 &&
+            //             variants[0].tripos[2] == 35)
+            //     )
+            // })
+            // .collect::<Vec<Vec<TriPosPenalty>>>();
+            // println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            //     }
+
+            //     if best_trigram.ngram.clone() == "ill" {
+            //     println!("position_0_filter {:?}", position_0_filter);
+            //     println!("position_1_filter {:?}", position_1_filter);
+            //     println!("position_2_filter {:?}", position_2_filter);
+            //     let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //     .clone()
+            //     .into_iter()
+            //     .filter(|variants| {
+            //         return 
+            //         variants.len() > 0 &&
+            //         ((variants[0].tripos[0] == 15 &&
+            //         variants[0].tripos[1] == 35 &&
+            //         variants[0].tripos[2] == 35) ||
+            //         (variants[0].tripos[0] == 35 &&
+            //         variants[0].tripos[1] == 35 &&
+            //         variants[0].tripos[2] == 15) ||
+            //         (variants[0].tripos[0] == 35 &&
+            //         variants[0].tripos[1] == 15 &&
+            //         variants[0].tripos[2] == 35)
+            //     )
+            // })
+            // .collect::<Vec<Vec<TriPosPenalty>>>();
+            // println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            //     }
+
+            //     if best_trigram.ngram.clone() == "lly" {
+            //         let mut filtered_position_penalties_variants = tripos_variants_penalised
+            //         .clone()
+            //         .into_iter()
+            //         .filter(|variants| {
+            //             return 
+            //                 variants.len() > 0 &&
+            //                 ((variants[0].tripos[0] == 35 &&
+            //                 variants[0].tripos[1] == 35 &&
+            //                 variants[0].tripos[2] == 29) ||
+            //                 (variants[0].tripos[0] == 35 &&
+            //                 variants[0].tripos[1] == 29 &&
+            //                 variants[0].tripos[2] == 35) ||
+            //                 (variants[0].tripos[0] == 29 &&
+            //                 variants[0].tripos[1] == 35 &&
+            //                 variants[0].tripos[2] == 35)
+            //         )
+            //     })
+            //     .collect::<Vec<Vec<TriPosPenalty>>>();
+            //     println!("filtered_position_penalties_variants {:?}", filtered_position_penalties_variants);
+            // }
+
+                let mut filtered_position_penalties_variants = tripos_variants_penalised
+                        .clone()
+                        .into_iter()
+                        .filter(|variants| {
+                            return (
+                                variants.len() > 0 &&
+                                //filter out already assigned positions
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                // !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                //filter valid positions for characters which have existing 
+                                (
+                                    
+                                (
+                                    no_filters_set &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                    !all_assigned_tripos_list.contains(&variants[0].tripos[2])
+                                ) ||
+                                (
+                                    all_matching_filters &&
+                                    (
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                        variants[0].tripos[0] == position_0_filter &&
+                                        variants[0].tripos[1] == position_0_filter &&
+                                        variants[0].tripos[2] == position_0_filter
+                                    )
+                                ) ||
+                                (
+                                    only_pos_0_filter_set &&
+                                    (
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] == position_0_filter &&
+                                            variants[0].tripos[1] != position_0_filter &&
+                                            variants[0].tripos[2] != position_0_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] != position_0_filter &&
+                                            variants[0].tripos[1] == position_0_filter &&
+                                            variants[0].tripos[2] != position_0_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            variants[0].tripos[0] != position_0_filter &&
+                                            variants[0].tripos[1] != position_0_filter &&
+                                            variants[0].tripos[2] == position_0_filter
+                                        )
+                                    )
+                                )||
+                                (
+                                    only_pos_1_filter_set &&
+                                    (
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] == position_1_filter &&
+                                            variants[0].tripos[1] != position_1_filter &&
+                                            variants[0].tripos[2] != position_1_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] != position_1_filter &&
+                                            variants[0].tripos[1] == position_1_filter &&
+                                            variants[0].tripos[2] != position_1_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            variants[0].tripos[0] != position_1_filter &&
+                                            variants[0].tripos[1] != position_1_filter &&
+                                            variants[0].tripos[2] == position_1_filter
+                                        )
+                                    )
+                                )||
+                                (
+                                    only_pos_2_filter_set &&
+                                    (
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] == position_2_filter &&
+                                            variants[0].tripos[1] != position_2_filter &&
+                                            variants[0].tripos[2] != position_2_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            variants[0].tripos[0] != position_2_filter &&
+                                            variants[0].tripos[1] == position_2_filter &&
+                                            variants[0].tripos[2] != position_2_filter
+                                        ) ||
+                                        (
+                                            all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                            !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                            variants[0].tripos[0] != position_2_filter &&
+                                            variants[0].tripos[1] != position_2_filter &&
+                                            variants[0].tripos[2] == position_2_filter
+                                        )
+                                    )
+                                )||
+                                (
+                                    two_duplicate_filters && 
+                                    ((
+                                        only_pos_0_1_filters_match &&
+                                        pos_2_filter_not_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] != position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[1] != position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[0] != position_0_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_0_2_filters_match &&
+                                        pos_1_filter_not_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] != position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[1] != position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[0] != position_2_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_1_2_filters_match &&
+                                        pos_0_filter_not_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] != position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[1] != position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[0] != position_1_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_0_1_filters_match &&
+                                        pos_2_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] != position_0_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[1] != position_0_filter &&
+                                                variants[0].tripos[1] == position_2_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_0_filter &&
+                                                variants[0].tripos[0] != position_0_filter &&
+                                                variants[0].tripos[0] == position_2_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_0_2_filters_match &&
+                                        pos_1_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] != position_2_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[1] != position_2_filter &&
+                                                variants[0].tripos[1] == position_1_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_2_filter &&
+                                                variants[0].tripos[0] != position_2_filter &&
+                                                variants[0].tripos[0] == position_1_filter
+                                            )
+                                        ) 
+                                    ) ||
+                                    (
+                                        only_pos_1_2_filters_match &&
+                                        pos_0_filter_set &&
+                                        (
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] != position_1_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[1] != position_1_filter &&
+                                                variants[0].tripos[1] == position_0_filter
+                                            ) ||
+                                            (
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_1_filter &&
+                                                variants[0].tripos[0] != position_1_filter &&
+                                                variants[0].tripos[0] == position_0_filter
+                                            )
+                                        ) 
+                                    )
+                                )
+                                ) ||
+                                (
+                                    no_filters_match &&
+                                    (
+                                    (
+                                        all_filters_set &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                        all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                        (
+                                            (
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_0_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_2_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_1_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_2_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_0_filter &&
+                                                variants[0].tripos[2] == position_1_filter
+                                            )||
+                                            (
+                                                variants[0].tripos[0] == position_2_filter &&
+                                                variants[0].tripos[1] == position_1_filter &&
+                                                variants[0].tripos[2] == position_0_filter
+                                            )
+                                        )
+                                    ) || 
+
+                                    (
+                                        two_filters_set &&
+                                        (
+                                        (
+                                            (
+                                                pos_0_filter_set && 
+                                                pos_1_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[1] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[1] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )
+                                                )
+                                            )
+                                        ) ||
+                                        (
+                                            (
+                                                pos_0_filter_set && 
+                                                pos_2_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[1] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_0_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[1] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_0_filter
+                                                    )
+                                                )
+                                            )
+                                        ) ||
+                                        (
+                                            (
+                                                pos_1_filter_set && 
+                                                pos_2_filter_set && 
+                                                (
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[1] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_1_filter &&
+                                                        variants[0].tripos[2] == position_2_filter
+                                                    ) ||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[1] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                                                        variants[0].tripos[0] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )||
+                                                    (
+                                                        !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                                                        variants[0].tripos[1] == position_2_filter &&
+                                                        variants[0].tripos[2] == position_1_filter
+                                                    )
+                                                )
+                                            )
+                                        ) 
+                                    )
+                                    ) 
+                                    )
+                                )
+                                ) &&
+                                //this should deal with the leaky filter above not constraining duplicate characters
+                                //filter out positions that dont match trigram structure, eg duplicating letters
+
+                                ((parent_has_ngram_doubling_letter == false &&
+                                    variants[0].tripos[0] != variants[0].tripos[1] &&
+                                    variants[0].tripos[1] != variants[0].tripos[2] &&
+                                    variants[0].tripos[0] != variants[0].tripos[2]) ||
+                                    (parent_has_ngram_doubling_letter == true &&
+                                        parent_trigram_tripos_combination.contains(
+                                            &variants[0].tripos
+                                        )))
+                            );
+                        })
+                        .collect::<Vec<Vec<TriPosPenalty>>>();
+                // } else {
+                //     filtered_position_penalties_variants = tripos_variants_penalised
+                //         .clone()
+                //         .into_iter()
+                //         .filter(
+                //             |variants|
+                //                 variants.len() > 0 &&
+                //                 //filter out already assigned positions
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[0]) &&
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[1]) &&
+                //                 // !all_assigned_tripos_list.contains(&variants[0].tripos[2]) &&
+                //                 //filter valid positions for characters which have existing positions
+                //                 (position_0_filter == 999 ||
+                //                     (position_0_filter != 999 &&
+                //                         variants[0].tripos[0] == position_0_filter) ||
+                //                     variants[0].tripos[1] == position_0_filter ||
+                //                     variants[0].tripos[2] == position_0_filter) &&
+                //                 (position_1_filter == 999 ||
+                //                     (position_1_filter != 999 &&
+                //                         variants[0].tripos[0] == position_1_filter) ||
+                //                     variants[0].tripos[1] == position_1_filter ||
+                //                     variants[0].tripos[2] == position_1_filter) &&
+                //                 (position_2_filter == 999 ||
+                //                     (position_2_filter != 999 &&
+                //                         variants[0].tripos[0] == position_2_filter) ||
+                //                     variants[0].tripos[1] == position_2_filter ||
+                //                     variants[0].tripos[2] == position_2_filter) &&
+                //                 //this should deal with the leaky filter above not constraining duplicate characters
+                //                 //filter out positions that dont match trigram structure, eg duplicating letters
+                //                 ((parent_has_ngram_doubling_letter == false &&
+                //                     variants[0].tripos[0] != variants[0].tripos[1] &&
+                //                     variants[0].tripos[1] != variants[0].tripos[2] &&
+                //                     variants[0].tripos[0] != variants[0].tripos[2]) ||
+                //                     (parent_has_ngram_doubling_letter == true &&
+                //                         parent_trigram_tripos_combination.contains(
+                //                             &variants[0].tripos
+                //                         )))
+                //         )
+                //         .collect::<Vec<Vec<TriPosPenalty>>>();
+                // }
+
+                // if best_trigram.ngram == "ook" {
+                //     println!("{:?}", filtered_position_penalties_variants.clone());
+                // }
+
+                let mut trigram_relation_variants: Vec<NgramListRelation> = Vec::new();
+                let mut non_existent_trigram_variants: Vec<String> = Vec::new();
+
+                //get all relations/frequencies for each trigram variant
+                for trigram_variant in trigram_variants.clone() {
+                    //println!("variant {:?}", trigram_variant.clone());
+                    match ngram_relation_ngrams.get(&trigram_variant) {
+                        Some(relation) => {
+                            trigram_relation_variants.push(relation.clone());
+                        }
+                        None => {
+                            non_existent_trigram_variants.push(trigram_variant);
+                        }
+                    }
+                }
+
+                trigram_relation_variants.sort_by(|trigram_relation1, trigram_relation2| {
+                    trigram_relation1.frequency
+                        .partial_cmp(&trigram_relation2.frequency)
+                        .unwrap()
+                        .reverse()
+                });
+
+                let mut total_trigram_tripos_variant_penalized_list: Vec<TrigramTriPosVariantPenaltyGroup> =
+                    Vec::new();
+
+                // println!(
+                //     "position variant available {:?}",
+                //     filtered_position_penalties_variants.len()
+                // );
+                // println!(
+                //     "non_existent_trigram_variants {:?}",
+                //     non_existent_trigram_variants
+                // );
+
+                // if best_trigram.ngram.clone() == "ook"{
+                //     let filtered_matching_trigrams1 = trigram_variants
+                //     .clone()
+                //     .into_iter()
+                //     .filter(|variant| {
+                //         true
+                //     })
+                //     .collect::<Vec<String>>();
+                //     println!("-------------------------------------------------");
+                //     // println!("first_tripos: {:?}", first_tripos);
+                //     // println!("filter_tripos: {:?}", filter_tripos);
+
+                //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                //     //println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                //     println!("position_0_filter {:?}", position_0_filter);
+                //     println!("position_1_filter {:?}", position_1_filter);
+                //     println!("position_2_filter {:?}", position_2_filter);                      
+                //     println!("all_position_trigram_mappings {:?}", all_assigned_char_position_hashmap);
+                //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                //     println!("-------------------------------------------------");
+                // }
+
+                //assuming tripos penalty arrays are sorted earlier
+                for position_penalty_variant in filtered_position_penalties_variants {
+                    let mut trigram_tripos_variant_penalty_group =
+                        TrigramTriPosVariantPenaltyGroup {
+                            total_penalty: 0.0,
+                            variants: Vec::new(),
+                        };
+                    let first_tripos = position_penalty_variant[0].tripos.clone();    
+                    let first_tripos_penalty = position_penalty_variant[0].total.clone();      
+                    // let second_tripos_penalty = position_penalty_variant[1].total.clone();      
+                    // let second_tripos = position_penalty_variant[1].tripos.clone();  
+                    
+                    let variant_count = position_penalty_variant.clone().len() as f64;
+
+                    let mut filter_tripos : [usize; 3] = [position_0_filter, position_1_filter, position_2_filter];
+
+                    let mut base_trigram_from_position = get_trigram_positions(
+                        filter_tripos,
+                        first_tripos,
+                        best_trigram.ngram.clone()
+                    );
+
+                    // println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    // println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    // println!("first_tripos: {:?} - {:?}", first_tripos, first_tripos_penalty);
+
+                    let filtered_matching_trigrams = trigram_variants
+                    .clone()
+                    .into_iter()
+                    .filter(|variant| {
+                        //true
+                        let variant_ngrams: Vec<char> = variant.chars().collect();
+                        (base_trigram_from_position.position_0_character == '_' ||
+                            base_trigram_from_position.position_0_character != '_' && 
+                            variant_ngrams[0] == base_trigram_from_position.position_0_character) &&
+                        (base_trigram_from_position.position_1_character == '_' ||
+                            base_trigram_from_position.position_1_character != '_' && 
+                            variant_ngrams[1] == base_trigram_from_position.position_1_character) &&
+                        (base_trigram_from_position.position_2_character == '_' ||
+                            base_trigram_from_position.position_2_character != '_' && 
+                            variant_ngrams[2] == base_trigram_from_position.position_2_character)
+                    })
+                    .collect::<Vec<String>>();
+
+                    // if best_trigram.ngram.clone().contains('y') || !best_trigram.ngram.clone().contains('u') {
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+                    // if((best_trigram.ngram.clone().contains('y') || best_trigram.ngram.clone().contains('l')) && !best_trigram.ngram.clone().contains('o')){
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+                    // if best_trigram.ngram.clone() == "ook"{
+                    //     let filtered_matching_trigrams1 = trigram_variants
+                    //     .clone()
+                    //     .into_iter()
+                    //     .filter(|variant| {
+                    //         true
+                    //     })
+                    //     .collect::<Vec<String>>();
+                    //     println!("-------------------------------------------------");
+                    //     println!("first_tripos: {:?}", first_tripos);
+                    //     println!("filter_tripos: {:?}", filter_tripos);
+
+                    //     println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    //     println!("base_trigram from pos: {:?}", base_trigram_from_position.clone());
+                    //     println!("position_0_filter {:?}", position_0_filter);
+                    //     println!("position_1_filter {:?}", position_1_filter);
+                    //     println!("position_2_filter {:?}", position_2_filter);                      
+                    //     println!("all_position_trigram_mappings {:?}", all_position_trigram_mappings);
+                    //     println!("filtered_matching_trigrams1 {:?}", filtered_matching_trigrams1);
+                    //     println!("-------------------------------------------------");
+                    // }
+
+
+                    
+
+                    let first_trigram = filtered_matching_trigrams[0].clone();//WTF
+
+                    // let first_trigram_relation_variant = trigram_relation_variants
+                    // .clone()
+                    // .into_iter()
+                    // .filter(|variant| {
+                    //     let variant_ngrams: Vec<char> = variant.ngram.chars().collect();
+                    //     (base_trigram_from_position.position_0_character == '_' ||
+                    //         base_trigram_from_position.position_0_character != '_' && 
+                    //         variant_ngrams[0] == base_trigram_from_position.position_0_character) &&
+                    //     (base_trigram_from_position.position_1_character == '_' ||
+                    //         base_trigram_from_position.position_1_character != '_' && 
+                    //         variant_ngrams[1] == base_trigram_from_position.position_1_character) &&
+                    //     (base_trigram_from_position.position_2_character == '_' ||
+                    //         base_trigram_from_position.position_2_character != '_' && 
+                    //         variant_ngrams[2] == base_trigram_from_position.position_2_character)
+                    // })
+                    // .map(|relation| (relation.ngram, relation.frequency))
+                    // .collect::<Vec<(String, usize)>>();
+
+                    // let penalties = position_penalty_variant.clone().into_iter()
+                    // .map(|relation| (relation.tripos, relation.total))
+                    // .collect::<Vec<([usize; 3], f64)>>();
+
+                    // println!("base_trigram: {:?}", best_trigram.ngram.clone());
+                    // println!("first_tripos: {:?} - {:?}", first_tripos, first_tripos_penalty);
+                    // println!("second_tripos: {:?} - {:?}", second_tripos, second_tripos_penalty);
+                    // println!("filter_tripos: {:?}", filter_tripos);
+                    // println!("penalties: {:?}", penalties);
+                    //println!("first_trigram_relation_variant: {:?}", first_trigram);
+
+                    // let mut trigram_position = get_position_from_trigram(
+                    //     first_tripos,
+                    //     first_trigram.ngram.clone(),
+                    //     non_existing_trigram
+                    // );
+
+                    //ndt - 1,999,999
+
+                    //ndt
+                    //[999,999,3]
+
+                    //[3,5,8]
+
+                    
+
+                    //choose one with higher frequency
+                    
+
+
+                    //ndt - 1,5,6   1,6,5
+                    //ntd - 1,6,3
+
+                    //dtn
+                    //dnt
+
+                    //tnd
+                    //tdn
+
+                    //determine which of the first tripos can map to the filter tripos
+                    //using the new first tripos as base determine the rest
+                    
+                    
+                    
+                    
+                    //let mut filter_tripos : [usize; 3] = [3, 999, 10];
+                    //let mut filter_tripos : [usize; 3] = [3, 21, 10];
+                    // if pos_0_filter_set && pos_1_filter_set && pos_2_filter_set {
+                    //     let mut base_trigram_position = get_trigram_positions(
+                    //         filter_tripos,
+                    //         first_tripos,
+                    //         best_trigram.ngram.clone()
+                    //     );
+                    // }
+                    // else {
+                    //     if pos_0_filter_set && pos_1_filter_set && pos_2_filter_not_set {
+                    //         if first_tripos[0] != filter_tripos[0] || first_tripos[0] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] || first_tripos[1] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] || first_tripos[2] != filter_tripos[1]{
+                    //             filter_tripos[2] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_set {
+                    //         if first_tripos[0] != filter_tripos[0] || first_tripos[0] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] || first_tripos[1] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] || first_tripos[2] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_not_set && pos_1_filter_set && pos_2_filter_set {
+                    //         if first_tripos[0] != filter_tripos[1] || first_tripos[0] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[1] || first_tripos[1] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[1] || first_tripos[2] != filter_tripos[2]{
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    //     if pos_0_filter_set && pos_1_filter_not_set && pos_2_filter_not_set {
+                    //         if first_tripos[0] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[0]
+                    //         }
+                    //         if first_tripos[1] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[1];
+                    //         }
+                    //         if first_tripos[2] != filter_tripos[0] {
+                    //             filter_tripos[1] = first_tripos[2];
+                    //         }
+                    //     }
+                    // }
+
+                    // let mut base_trigram_position = get_trigram_positions(
+                    //     first_tripos,
+                    //     first_tripos,
+                    //     base_ngram
+                    // );
+
+                    //let base_tripos : [usize; 3] = [base_trigram_position.position_0_character, base_trigram_position.position_1_character, base_trigram_position.position_2_character];
+
+                    //let mut filter_tripos : [usize; 3] = [3, 999, 999];
+                    //let mut filter_tripos : [usize; 3] = [999, 999, 999];
+                    //let mut filter_tripos : [usize; 3] = [position_0_filter, position_1_filter, position_2_filter];
+
+                    let mut non_existent_tripos_variants: Vec<[usize; 3]> = Vec::new();
+
+                    for non_existing_trigram in non_existent_trigram_variants.clone() {
+
+                        let mut trigram_position = get_position_from_trigram(
+                            first_tripos,
+                            first_trigram.clone(),
+                            non_existing_trigram
+                        );
+                        non_existent_tripos_variants.push([
+                            trigram_position.character_0_position,
+                            trigram_position.character_1_position,
+                            trigram_position.character_2_position,
+                        ]);
+                    }
+
+                    for (index, tripos_penalty) in position_penalty_variant
+                        .into_iter()
+                        .filter(|pos| !non_existent_tripos_variants.contains(&pos.tripos))
+                        .enumerate() {
+                            let mut trigram_position = get_trigram_positions(
+                                first_tripos,
+                                tripos_penalty.tripos,
+                                first_trigram.clone()
+                            );
+                            let matching_trigram = [
+                                trigram_position.position_0_character.to_string(),
+                                trigram_position.position_1_character.to_string(),
+                                trigram_position.position_2_character.to_string(),
+                            ].join("");
+
+                            //println!("first_tripos: {:?}", first_tripos);
+                            //println!("tripos_penalty: {:?}", tripos_penalty.tripos);
+                            //println!("matching_trigram: {:?}", matching_trigram);
+                            //bad hack that needs a better way
+                            let trigram_relation_variant = trigram_relation_variants
+                                .clone()
+                                .into_iter()
+                                .filter(|variant| variant.ngram == matching_trigram)
+                                .collect::<Vec<NgramListRelation>>()[0]
+                                .clone();
+
+                            //calculate each trigram tripos variant score and total
+                            let total_score =
+                                (trigram_relation_variant.frequency as f64) * tripos_penalty.total;
+
+                            trigram_tripos_variant_penalty_group.total_penalty =
+                                trigram_tripos_variant_penalty_group.total_penalty +
+                                total_score / variant_count;
+
+                            let trigram_tripos_variant_penalty = TrigramTriPosVariantPenalty {
+                                trigram: trigram_relation_variant.ngram,
+                                tripos: tripos_penalty.tripos,
+                                trigram_tripos_penalty: total_score,
+                                penalty: tripos_penalty.penalty,
+                            };
+                            trigram_tripos_variant_penalty_group.variants.push(
+                                trigram_tripos_variant_penalty
+                            );
+                        }
+
+                    total_trigram_tripos_variant_penalized_list.push(
+                        trigram_tripos_variant_penalty_group
+                    );
+                }
+
+                total_trigram_tripos_variant_penalized_list.sort_by(
+                    |total_trigram_tripos_variant1, total_trigram_tripos_variant2| {
+                        total_trigram_tripos_variant1.total_penalty
+                            .partial_cmp(&total_trigram_tripos_variant2.total_penalty)
+                            .unwrap()
+                    }
+                );
+                // println!("total_trigram_tripos_variant_penalized_list first: {:?} - {:?}", total_trigram_tripos_variant_penalized_list[0].variants[0].trigram,total_trigram_tripos_variant_penalized_list[0].total_penalty);
+                // println!("total_trigram_tripos_variant_penalized_list last: {:?} - {:?}", total_trigram_tripos_variant_penalized_list[total_trigram_tripos_variant_penalized_list.len()-1].variants[0].trigram,total_trigram_tripos_variant_penalized_list[total_trigram_tripos_variant_penalized_list.len()-1].total_penalty);
+                
+
+                if total_trigram_tripos_variant_penalized_list.len() > 0 {
+                let trigram_tripos_variant_penalty =
+                    total_trigram_tripos_variant_penalized_list[0].clone();
+                let variant_penalty = trigram_tripos_variant_penalty.variants
+                    .clone()
+                    .into_iter()
+                    .filter(|variant| variant.trigram == best_trigram.ngram)
+                    .collect::<Vec<TrigramTriPosVariantPenalty>>()[0]
+                    .clone();
+
+                let variant_penalty_trigrams = trigram_tripos_variant_penalty.variants
+                    .clone()
+                    .into_iter()
+                    .map(|variant| variant.trigram)
+                    .collect::<Vec<String>>();
+
+                let variant_penalty_triposes = trigram_tripos_variant_penalty.variants
+                    .clone()
+                    .into_iter()
+                    .map(|variant| variant.tripos)
+                    .collect::<Vec<[usize; 3]>>();
+
+                // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+                //     index: layoutAssignment.assignment_ordering.len() - 1,
+                //     trigram: best_trigram.ngram.clone(),
+                //     tripos: variant_penalty.tripos,
+                //     total_penalty: trigram_tripos_variant_penalty.total_penalty,
+                //     variant_trigram: variant_penalty_trigrams,
+                //     variant_pos: variant_penalty_triposes,
+                //     relation: best_trigram.clone(),
+                //     penalty: variant_penalty.penalty,
+                //     trigram_tripos_variant_penalty_group: trigram_tripos_variant_penalty,
+                // });
+
+                let mut firstT:bool = false;
+                if best_trigram.ngram.contains('t') {
+                    firstT = true;
+                    println!("#####################################################");
+                    println!("best trigram for t: {:?}", best_trigram.ngram.clone());
+                    println!("all pos list at t: {:?}", all_assigned_tripos_list.clone());
+                    println!("all assigned char at t: {:?}", all_assigned_char_position_hashmap.clone());
+                    println!("layout assignent at t: {:?}", layoutAssignment.assignment_ordering.clone());
+                    println!("#####################################################");
+                }
+                println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+                for (index, character) in  best_trigram.ngram.clone().chars().enumerate() {
+                    let position = variant_penalty.tripos[index];
+                    if !all_assigned_tripos_list.contains(&position){
+                        all_assigned_tripos_list.push(position);
+                    }
+                    println!("character getting assigned: {:?}", character.clone());
+                    all_assigned_char_position_hashmap.entry(character).or_insert(position);
+                }
+
+                println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+
+                if !all_assigned_trigram_list.contains(&best_trigram.ngram.clone()){
+                    all_assigned_trigram_list.push(best_trigram.ngram.clone());
+                }
+
+                // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigramSmall {
+                //     index: layoutAssignment.assignment_ordering.len() - 1,
+                //     trigram: best_trigram.ngram.clone(),
+                //     tripos: variant_penalty.tripos,
+                //     total_penalty: trigram_tripos_variant_penalty.total_penalty,
+                //     variant_trigram: variant_penalty_trigrams,
+                //     variant_pos: variant_penalty_triposes
+                // });
+                //println!("layoutAssignment tripos: {:?}", variant_penalty.tripos);
+                //println!("layoutAssignment ngram: {:?}", best_trigram.ngram.clone());
+                }   
+                else{
+                    println!("no possible assignment for: {:?}", best_trigram.ngram.clone());
+                }
+                
+            }
+
+            // layoutAssignment.assignment_ordering.push(LayoutAssignmentTrigram {
+            //     index: layoutAssignment.assignment_ordering.len() - 1,
+            //     trigram: best_trigram.ngram.clone(),
+            //     tripos: [1,1,1],
+            //     relation: best_trigram.clone(),
+
+            // });
+        }
+        ngram_queue.remove(0);
+    }
+
+    let total_combined_penalty= layoutAssignment.assignment_ordering
+    .into_iter()
+    .map(|assignment|assignment.total_penalty)
+    .reduce(|acc, item|{
+        return item + acc
+    }).unwrap();
+
+    println!("layout assignment: {:?}", total_combined_penalty);
+    println!("all_assigned_char_position_hashmap: {:?}", all_assigned_char_position_hashmap);
+}
+
 pub fn evaluate_trigram_combinations() -> Vec<[char; 3]> {
     let mut trigram_combinations: Vec<[char; 3]> = Vec::new();
 
@@ -3785,6 +6496,11 @@ pub fn get_trigram_positions(
     let character1 = ngrams[1];
     let character2 = ngrams[2];
 
+    /// [a,n,d]
+    /// [1,5,8]
+    /// [8,1,5]
+    /// [-,d,a]
+
     if new_tri_pos[0] == base_tri_pos[0] {
         trigram_position.position_0_character = character0;
     }
@@ -3814,6 +6530,48 @@ pub fn get_trigram_positions(
     }
 
     return trigram_position;
+}
+
+
+pub fn get_position_from_base_position(
+    base_tri_pos: [usize; 3],
+    new_tri_pos: [usize; 3],
+    trigram: String
+) -> [usize; 3] {
+    let mut position_trigram:[usize; 3] = [999,999,999];
+
+    if base_tri_pos[0] == new_tri_pos[0] {
+        position_trigram[0] = base_tri_pos[0];
+    }
+    if base_tri_pos[0] == new_tri_pos[1] {
+        position_trigram[0] = base_tri_pos[1];
+    }
+    if base_tri_pos[0] == new_tri_pos[2] {
+        position_trigram[0] = base_tri_pos[2];
+    }
+    if base_tri_pos[1] == new_tri_pos[0] {
+        position_trigram[1] = base_tri_pos[0];
+    }
+    if base_tri_pos[1] == new_tri_pos[1] {
+        position_trigram[1] = base_tri_pos[1];
+    }
+    if base_tri_pos[1] == new_tri_pos[2] {
+        position_trigram[1] = base_tri_pos[2];
+    }
+    if base_tri_pos[2] == new_tri_pos[0] {
+        position_trigram[2] = base_tri_pos[0];
+    }
+    if base_tri_pos[2] == new_tri_pos[1] {
+        position_trigram[2] = base_tri_pos[1];
+    }
+    if base_tri_pos[2] == new_tri_pos[2] {
+        position_trigram[2] = base_tri_pos[2];
+    }
+
+    
+
+
+    return position_trigram;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -3880,17 +6638,21 @@ pub fn get_position_from_trigram(
 }
 
 pub fn evaluate_position_combinations() -> Vec<[usize; 3]> {
-    // let mut position_combinations: Vec<[usize; 3]> = Vec::new();
-    // for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product()  {
-    //     let p0 = position[0];
-    //     let p1 = position[1];
-    //     let p2 = position[2];
+    let mut position_combinations: Vec<[usize; 3]> = Vec::new();
+    let not_valid_positions: Vec<usize> = vec![28, 29, 30, 31, 32, 33, 34, 35];
 
-    //     position_combinations.push([p0, p1, p2]);
-    //  }
+    for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product()  {
+        let p0 = position[0];
+        let p1 = position[1];
+        let p2 = position[2];
+
+        if !not_valid_positions.contains(&p0) && !not_valid_positions.contains(&p1) && !not_valid_positions.contains(&p2){
+            position_combinations.push([p0, p1, p2]);
+        }
+     }
 
     let filename = ["position", "_", "combinations"].join("");
-    //save_vec_array_list::<[usize; 3]>(&filename, position_combinations.clone());
+    save_vec_array_list::<[usize; 3]>(&filename, position_combinations.clone());
     let mut position_combinations: Vec<[usize; 3]> = read_vec_array_list::<[usize; 3]>(&filename);
 
     return position_combinations;
@@ -3902,64 +6664,64 @@ pub fn evaluate_trigram_tripos_combinations(
 ) -> HashMap<String, Vec<[usize; 3]>> {
     let mut trigram_tripos_combinations: HashMap<String, Vec<[usize; 3]>> = HashMap::new();
 
-    // for combination in trigram_combinations {
-    //     let c0 = combination[0];
-    //     let c1 = combination[1];
-    //     let c2 = combination[2];
-    //     let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
+    for combination in trigram_combinations {
+        let c0 = combination[0];
+        let c1 = combination[1];
+        let c2 = combination[2];
+        let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
 
-    //     //aab
-    //     if c0 == c1 && c0 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
-    //                 let entry = trigram_tripos_combinations
-    //                     .entry(trigram.clone())
-    //                     .or_insert(Vec::new());
-    //                 entry.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //abb
-    //     if c1 == c2 && c0 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
-    //                 let entry = trigram_tripos_combinations
-    //                     .entry(trigram.clone())
-    //                     .or_insert(Vec::new());
-    //                 entry.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //aba
-    //     if c0 == c2 && c1 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
-    //                 let entry = trigram_tripos_combinations
-    //                     .entry(trigram.clone())
-    //                     .or_insert(Vec::new());
-    //                 entry.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //aaa
-    //     if c0 == c1 && c1 == c2{
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
-    //                 let entry = trigram_tripos_combinations
-    //                     .entry(trigram.clone())
-    //                     .or_insert(Vec::new());
-    //                 entry.push(tripos);
-    //             }
-    //         }
-    //     }
-    // }
+        //aab
+        if c0 == c1 && c0 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
+                    let entry = trigram_tripos_combinations
+                        .entry(trigram.clone())
+                        .or_insert(Vec::new());
+                    entry.push(tripos);
+                }
+            }
+        }
+        //abb
+        if c1 == c2 && c0 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
+                    let entry = trigram_tripos_combinations
+                        .entry(trigram.clone())
+                        .or_insert(Vec::new());
+                    entry.push(tripos);
+                }
+            }
+        }
+        //aba
+        if c0 == c2 && c1 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
+                    let entry = trigram_tripos_combinations
+                        .entry(trigram.clone())
+                        .or_insert(Vec::new());
+                    entry.push(tripos);
+                }
+            }
+        }
+        //aaa
+        if c0 == c1 && c1 == c2{
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
+                    let entry = trigram_tripos_combinations
+                        .entry(trigram.clone())
+                        .or_insert(Vec::new());
+                    entry.push(tripos);
+                }
+            }
+        }
+    }
 
-    // for item in trigram_tripos_combinations.clone().into_iter() {
-    //     println!("len: {} - {}", item.0, item.1.len());
-    // }
+    for item in trigram_tripos_combinations.clone().into_iter() {
+        println!("len: {} - {}", item.0, item.1.len());
+    }
 
     let filename = ["trigram", "_", "tripos", "_", "combinations"].join("");
-    //save_generic_list::<HashMap<String, Vec<[usize; 3]>>>(&filename, trigram_tripos_combinations.clone());
+    save_generic_list::<HashMap<String, Vec<[usize; 3]>>>(&filename, trigram_tripos_combinations.clone());
     let mut trigram_tripos_combinations: HashMap<String, Vec<[usize; 3]>> = read_generic_list::<
         HashMap<String, Vec<[usize; 3]>>
     >(&filename);
@@ -3973,58 +6735,58 @@ pub fn evaluate_trigram_tripos_filter(
 ) -> Vec<[usize; 3]> {
     let mut trigram_tripos_filter: Vec<[usize; 3]> = Vec::new();
 
-    // for combination in trigram_combinations {
-    //     let c0 = combination[0];
-    //     let c1 = combination[1];
-    //     let c2 = combination[2];
-    //     let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
+    for combination in trigram_combinations {
+        let c0 = combination[0];
+        let c1 = combination[1];
+        let c2 = combination[2];
+        let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
 
-    //     //aab
-    //     if c0 == c1 && c0 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
-    //                 trigram_tripos_filter.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //abb
-    //     if c1 == c2 && c0 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
-    //                 trigram_tripos_filter.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //aba
-    //     if c0 == c2 && c1 != c2 {
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
-    //                 trigram_tripos_filter.push(tripos);
-    //             }
-    //         }
-    //     }
-    //     //aaa
-    //     if c0 == c1 && c1 == c2{
-    //         for tripos in position_combinations.clone() {
-    //             if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
-    //                 trigram_tripos_filter.push(tripos);
-    //             }
-    //         }
-    //     }
-    // }
+        //aab
+        if c0 == c1 && c0 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[1] && tripos[0] != tripos[2] {
+                    trigram_tripos_filter.push(tripos);
+                }
+            }
+        }
+        //abb
+        if c1 == c2 && c0 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[1] == tripos[2] && tripos[0] != tripos[2] {
+                    trigram_tripos_filter.push(tripos);
+                }
+            }
+        }
+        //aba
+        if c0 == c2 && c1 != c2 {
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[2] && tripos[1] != tripos[2] {
+                    trigram_tripos_filter.push(tripos);
+                }
+            }
+        }
+        //aaa
+        if c0 == c1 && c1 == c2{
+            for tripos in position_combinations.clone() {
+                if tripos[0] == tripos[1] && tripos[1] == tripos[2] {
+                    trigram_tripos_filter.push(tripos);
+                }
+            }
+        }
+    }
 
-    // let unique_items: Vec<[usize;3]> = trigram_tripos_filter.clone()
-    // .into_iter()
-    // .unique()
-    // .collect::<Vec<[usize;3]>>();
+    let unique_items: Vec<[usize;3]> = trigram_tripos_filter.clone()
+    .into_iter()
+    .unique()
+    .collect::<Vec<[usize;3]>>();
 
-    // let filtered_items:Vec<[usize;3]> = position_combinations.clone()
-    // .into_iter()
-    // .filter(|positions|!unique_items.contains(positions))
-    // .collect::<Vec<[usize;3]>>();
+    let filtered_items:Vec<[usize;3]> = position_combinations.clone()
+    .into_iter()
+    .filter(|positions|!unique_items.contains(positions))
+    .collect::<Vec<[usize;3]>>();
 
     let filename = ["trigram", "_", "tripos", "_", "filter"].join("");
-    //save_generic_list::<Vec<[usize; 3]>>(&filename, filtered_items.clone());
+    save_generic_list::<Vec<[usize; 3]>>(&filename, filtered_items.clone());
     let mut filtered_items: Vec<[usize; 3]> = read_generic_list::<Vec<[usize; 3]>>(&filename);
     //println!("filtered_items: {}", filtered_items.len());
     return filtered_items;
@@ -4111,30 +6873,30 @@ pub fn evaluate_tripos_variants_penalised_hashmap(
 }
 
 pub fn evaluate_tripos_variants(position_combinations: Vec<[usize; 3]>) -> Vec<Vec<[usize; 3]>> {
-    // let mut tripos_variants: Vec<Vec<[usize; 3]>> = Vec::new();
+    let mut tripos_variants: Vec<Vec<[usize; 3]>> = Vec::new();
 
-    // for combination in position_combinations {
-    //     let p0 = combination[0];
-    //     let p1 = combination[1];
-    //     let p2 = combination[2];
+    for combination in position_combinations {
+        let p0 = combination[0];
+        let p1 = combination[1];
+        let p2 = combination[2];
 
-    //     let mut variant_position_combinations: Vec<[usize; 3]> = Vec::new();
-    //     for positions in [p0, p1, p2].iter().permutations(3) {
-    //         let v0 = *positions[0];
-    //         let v1 = *positions[1];
-    //         let v2 = *positions[2];
-    //         variant_position_combinations.push([v0, v1, v2]);
-    //     }
-    //     variant_position_combinations.sort();
-    //     variant_position_combinations.dedup();
+        let mut variant_position_combinations: Vec<[usize; 3]> = Vec::new();
+        for positions in [p0, p1, p2].iter().permutations(3) {
+            let v0 = *positions[0];
+            let v1 = *positions[1];
+            let v2 = *positions[2];
+            variant_position_combinations.push([v0, v1, v2]);
+        }
+        variant_position_combinations.sort();
+        variant_position_combinations.dedup();
 
-    //     if !tripos_variants.contains(&variant_position_combinations){
-    //         tripos_variants.push(variant_position_combinations);
-    //     }
-    // }
+        if !tripos_variants.contains(&variant_position_combinations){
+            tripos_variants.push(variant_position_combinations);
+        }
+    }
 
     let filename = ["tripos", "_", "variants"].join("");
-    //save_generic_list::<Vec<Vec<[usize; 3]>>>(&filename, tripos_variants.clone());
+    save_generic_list::<Vec<Vec<[usize; 3]>>>(&filename, tripos_variants.clone());
     let mut tripos_variants: Vec<Vec<[usize; 3]>> = read_generic_list::<Vec<Vec<[usize; 3]>>>(
         &filename
     );
@@ -4242,35 +7004,39 @@ pub fn evaluate_position_penalty_orderings(
 pub fn evaluate_position_penalty() -> Vec<
     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
 > {
-    let position_map = get_empty_position_map();
-    let mut position_penalties: Vec<
-        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
-    > = Vec::new();
-
-    let perms = (0..NUM_OF_KEYS).permutations(3);
-    println!("perms: {}", perms.count());
-
-    for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product() {
-        //for permutation in (0..layout::NUM_OF_KEYS).collect::<Vec<usize>>().iter().permutations(3) {
-        let p0 = position[0];
-        let p1 = position[1];
-        let p2 = position[2];
-
-        position_penalties.push(
-            evaluator_penalty_small::calculate_position_penalty(
-                *position_map.get_key_position(p0),
-                *position_map.get_key_position(p1),
-                *position_map.get_key_position(p2)
-            )
-        );
-    }
-
-    //let penalty_filename = ["position", "_", "penalty"].join("");
-    //save_position_penalty_list(&penalty_filename, position_penalties.clone());
-
+    // let position_map = get_empty_position_map();
     // let mut position_penalties: Vec<
     //     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
-    // > = read_position_penalty_list(&penalty_filename);
+    // > = Vec::new();
+
+    // // let perms = (0..NUM_OF_KEYS).permutations(3);
+    // // println!("perms minus thumb: {}", perms.count());
+
+    let not_valid_positions: Vec<usize> = vec![28, 29, 30, 31, 32, 33, 34];
+
+    // for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product() {
+    //     //for permutation in (0..layout::NUM_OF_KEYS).collect::<Vec<usize>>().iter().permutations(3) {
+    //     let p0 = position[0];
+    //     let p1 = position[1];
+    //     let p2 = position[2];
+
+    //     if !not_valid_positions.contains(&p0) && !not_valid_positions.contains(&p1) && !not_valid_positions.contains(&p2){
+    //         position_penalties.push(
+    //             evaluator_penalty_small::calculate_position_penalty(
+    //                 *position_map.get_key_position(p0),
+    //                 *position_map.get_key_position(p1),
+    //                 *position_map.get_key_position(p2)
+    //             )
+    //         );
+    //     }
+    // }
+
+    let penalty_filename = ["position", "_", "penalty"].join("");
+    //save_position_penalty_list(&penalty_filename, position_penalties.clone());
+
+    let mut position_penalties: Vec<
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = read_position_penalty_list(&penalty_filename);
 
     let mut filtered_penalties: Vec<
         evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
@@ -4299,6 +7065,12 @@ pub fn evaluate_position_penalty() -> Vec<
         }
     }
 
+    //dont panic for excluded positions
+    for excluded in not_valid_positions {
+        positions_filled[excluded] = "0".to_string()
+    }
+
+    //confirm positions which should have penalties are covered
     if positions_filled.iter().any(|pos| !pos.eq(&"0".to_string())) {
         panic!();
     }
@@ -4326,30 +7098,30 @@ pub fn evaluate_position_penalty() -> Vec<
 pub fn evaluate_position_penalty_hashmap(
     position_combinations: Vec<[usize; 3]>
 ) -> HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
-    // let position_map = get_empty_position_map();
-    // let mut position_penalties: HashMap<
-    //     String,
-    //     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
-    // > = HashMap::new();
+    let position_map = get_empty_position_map();
+    let mut position_penalties: HashMap<
+        String,
+        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    > = HashMap::new();
 
-    // for position in position_combinations {
-    //     let p0 = position[0];
-    //     let p1 = position[1];
-    //     let p2 = position[2];
+    for position in position_combinations {
+        let p0 = position[0];
+        let p1 = position[1];
+        let p2 = position[2];
 
-    //     let pos_key = [p0.to_string(), "_".to_string(), p1.to_string(), "_".to_string(), p2.to_string()].join("");
+        let pos_key = [p0.to_string(), "_".to_string(), p1.to_string(), "_".to_string(), p2.to_string()].join("");
 
-    //     let penalty = evaluator_penalty_small::calculate_position_penalty(
-    //         *position_map.get_key_position(p0),
-    //         *position_map.get_key_position(p1),
-    //         *position_map.get_key_position(p2)
-    //     );
+        let penalty = evaluator_penalty_small::calculate_position_penalty(
+            *position_map.get_key_position(p0),
+            *position_map.get_key_position(p1),
+            *position_map.get_key_position(p2)
+        );
 
-    //     position_penalties.insert(pos_key, penalty);
-    // }
+        position_penalties.insert(pos_key, penalty);
+    }
 
     let penalty_filename = ["position", "_", "penalty", "_", "hashmap"].join("");
-    //save_position_penalty_hashmap(&penalty_filename, position_penalties.clone());
+    save_position_penalty_hashmap(&penalty_filename, position_penalties.clone());
 
     let mut position_penalties: HashMap<
         String,
@@ -4452,6 +7224,85 @@ pub fn valid_repeating_pattern<T>(first: T, second: T, third: T) -> bool
         (second == third && first != third) ||
         (first == third && second != third) ||
         (first == second && second == third);
+}
+
+pub fn evaluate_trigram_frequencies(
+    trigram_combinations: Vec<[char; 3]>,
+) -> HashMap<String, usize> {
+    let mut trigram_frequency_hashmap: HashMap<String, usize> = HashMap::new();
+
+    let onegram_filename = ["result2", "_", "Brandon", "_", "Gore", "_", "messages", "_", "normalized", "_", "1", "-2024-04-02 19-33-28.881421400 UTC"].join("");
+    let bigram_filename = ["result2", "_", "Brandon", "_", "Gore", "_", "messages", "_", "normalized", "_", "2"].join("");
+    //let trigram_filename = ["result2", "_", "Brandon", "_", "Gore", "_", "messages", "_", "normalized", "_", "3", "-2024-04-01 20-47-15.752485100 UTC"].join("");
+    
+    let onegram_list: NgramList = read_generic_list::<NgramList>(&onegram_filename);
+    let bigram_list: NgramList = read_generic_list::<NgramList>(&bigram_filename);
+
+     for combination in trigram_combinations {
+         let c0 = combination[0];
+         let c1 = combination[1];
+         let c2 = combination[2];
+         let trigram = c0.to_string() + &c1.to_string() + &c2.to_string();
+
+         let first_bigram = c0.to_string() + &c1.to_string();
+         let second_bigram = c1.to_string() + &c2.to_string();
+
+         let onegram_0 = onegram_list.map.get(&c0.to_string()).unwrap_or(&0);
+
+         let missing_0 = onegram_list.map.get(&c0.to_string());
+         match missing_0 {
+            Some(_) => (),
+            None => println!("c0: {} - '{}'", &c0.to_string(), &trigram),
+        }
+         
+         let onegram_1 = onegram_list.map.get(&c1.to_string()).unwrap_or(&0);
+
+         let missing_1 = onegram_list.map.get(&c1.to_string());
+         match missing_1 {
+            Some(_) => (),
+            None => println!("c1: {} - '{}'", &c1.to_string(), &trigram),
+        }
+         let onegram_2 = onegram_list.map.get(&c2.to_string()).unwrap_or(&0);
+
+         let missing_2 = onegram_list.map.get(&c2.to_string());
+         match missing_2 {
+            Some(_) => (),
+            None => println!("c2: {} - '{}'", &c2.to_string(), &trigram),
+        }
+
+         let bigram_0 = bigram_list.map.get(&first_bigram).unwrap_or(&0);
+
+         let missing_01 = bigram_list.map.get(&first_bigram);
+         match missing_01 {
+            Some(_) => (),
+            None => println!("first_bigram: {} - '{}'", &first_bigram, &trigram),
+        }
+        let bigram_1 = bigram_list.map.get(&second_bigram).unwrap_or(&0);
+
+         let missing_12 = bigram_list.map.get(&second_bigram);
+         match missing_12 {
+            Some(_) => (),
+            None => println!("second_bigram: {} - '{}'", &second_bigram, &trigram),
+        }
+
+         let total_frequency = onegram_0 + onegram_1 + onegram_2 + bigram_0 + bigram_1;
+         //let total_frequency = bigram_0 + bigram_1;
+         //adding additional noise in to reduce possibly that 2 values exactly equal
+         //let mut random = rand::thread_rng();
+         //let noise: f64 = random.gen_range(0.0f64, 0.1f64);
+         //let total_noisy_frequency = total_frequency;// as f64// + noise;
+
+        trigram_frequency_hashmap.insert(
+            trigram,
+            total_frequency
+        );
+     }
+
+    let filename = ["trigram", "_", "frequency", "_", "hashmap"].join("");
+    save_generic_list::<HashMap<String, usize>>(&filename, trigram_frequency_hashmap.clone());
+    //let mut trigram_frequency_hashmap: HashMap<String, usize> = read_generic_list::<HashMap<String, usize>>(&filename);
+    //println!("filtered_items: {}", filtered_items.len());
+    return trigram_frequency_hashmap;
 }
 
 pub fn get_penalty_list(

@@ -73,7 +73,7 @@ pub fn simulate<'a>(
                 let mut accepted_layout = entry.clone();
                 let mut bestLayout: BestLayoutsEntry = entry.clone();
 
-                //let printFrequency = thread_rng().gen::<i32>() % 100000 + 100000;
+                let printFrequency = thread_rng().gen::<i32>() % 100000 + 100000;
 
                 for cycle in 1..CYCLES + 1 {
                     let mut curr_layout = accepted_layout.clone();
@@ -99,14 +99,14 @@ pub fn simulate<'a>(
                     ) {
                         accepted_layout = curr_layout.clone();
                     }
-                    // if cycle % printFrequency  == 0 {
+                     if cycle % printFrequency  == 0 {
                     //     println!("BESTBESTBESTBESTBESTBESTBESTBESTBESTBESTBEST");
-                    //     print_result(&bestLayout);
+                           print_result(&bestLayout);
                     //     println!("BESTBESTBESTBESTBESTBESTBESTBESTBESTBESTBEST");
                     //     println!("CURRCURRCURRCURRCURRCURRCURRCURRCURRCURRCURR");
                     //     print_result(&curr_layout);
                     //     println!("CURRCURRCURRCURRCURRCURRCURRCURRCURRCURRCURR");
-                    // }
+                     }
                 }
                 //print_result(&entry);
                 bestLayout
