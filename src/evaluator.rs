@@ -6658,6 +6658,36 @@ pub fn evaluate_layout(ngram_relation: NgramListRelationMapping, layout: Layout)
     println!("all_assigned_char_position_hashmap: {:?}", all_assigned_char_position_hashmap);
 }
 
+pub fn evaluate_layout_score(ngram_list: &Vec<(Vec<char>, usize)>, layout: &Layout, position_penalties_hashmap: &HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>>) -> evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }> {
+    let layout_char_positions = layout.get_character_positions();
+
+    let mut penalty = evaluator_penalty_small::Penalty::new();
+    for ngram in ngram_list {
+    
+        let character0_position = layout_char_positions.iter().position(|&c| c == ngram.0[0]).unwrap();
+        let character1_position = layout_char_positions.iter().position(|&c| c == ngram.0[1]).unwrap();
+        let character2_position = layout_char_positions.iter().position(|&c| c == ngram.0[2]).unwrap();
+
+        let pos_key = [
+            character0_position.to_string(),
+            "_".to_string(),
+            character1_position.to_string(),
+            "_".to_string(),
+            character2_position.to_string(),
+        ].join("");
+
+        let found_penalty_option = position_penalties_hashmap.get(&pos_key);
+        match found_penalty_option {
+            Some(found_penalty) => {
+                penalty= penalty.add(found_penalty.clone(), ngram.1);
+            },
+            None=> {println!("couldnt find penalty: {:?}", &ngram.0)}
+        };
+    }
+
+    return penalty;
+}
+
 pub fn evaluate_trigram_combinations() -> Vec<[char; 3]> {
     let mut trigram_combinations: Vec<[char; 3]> = Vec::new();
 
@@ -6851,25 +6881,25 @@ pub fn get_position_from_trigram(
 }
 
 pub fn evaluate_position_combinations() -> Vec<[usize; 3]> {
-    let mut position_combinations: Vec<[usize; 3]> = Vec::new();
-    let not_valid_positions: Vec<usize> = vec![28, 29, 30, 31, 32, 33, 34, 35];
+    // let mut position_combinations: Vec<[usize; 3]> = Vec::new();
+    // let not_valid_positions: Vec<usize> = vec![28, 29, 30, 31, 32, 33, 34, 35];
 
-    for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product() {
-        let p0 = position[0];
-        let p1 = position[1];
-        let p2 = position[2];
+    // for position in (0..3).map(|_| 0..layout::NUM_OF_KEYS).multi_cartesian_product() {
+    //     let p0 = position[0];
+    //     let p1 = position[1];
+    //     let p2 = position[2];
 
-        if
-            !not_valid_positions.contains(&p0) &&
-            !not_valid_positions.contains(&p1) &&
-            !not_valid_positions.contains(&p2)
-        {
-            position_combinations.push([p0, p1, p2]);
-        }
-    }
+    //     if
+    //         !not_valid_positions.contains(&p0) &&
+    //         !not_valid_positions.contains(&p1) &&
+    //         !not_valid_positions.contains(&p2)
+    //     {
+    //         position_combinations.push([p0, p1, p2]);
+    //     }
+    // }
 
     let filename = ["position", "_", "combinations"].join("");
-    save_vec_array_list::<[usize; 3]>(&filename, position_combinations.clone());
+    //save_vec_array_list::<[usize; 3]>(&filename, position_combinations.clone());
     let mut position_combinations: Vec<[usize; 3]> = read_vec_array_list::<[usize; 3]>(&filename);
 
     return position_combinations;
@@ -7320,36 +7350,36 @@ pub fn evaluate_position_penalty() -> Vec<
 pub fn evaluate_position_penalty_hashmap(
     position_combinations: Vec<[usize; 3]>
 ) -> HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> {
-    let position_map = get_empty_position_map();
-    let mut position_penalties: HashMap<
-        String,
-        evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
-    > = HashMap::new();
+    // let position_map = get_empty_position_map();
+    // let mut position_penalties: HashMap<
+    //     String,
+    //     evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>
+    // > = HashMap::new();
 
-    for position in position_combinations {
-        let p0 = position[0];
-        let p1 = position[1];
-        let p2 = position[2];
+    // for position in position_combinations {
+    //     let p0 = position[0];
+    //     let p1 = position[1];
+    //     let p2 = position[2];
 
-        let pos_key = [
-            p0.to_string(),
-            "_".to_string(),
-            p1.to_string(),
-            "_".to_string(),
-            p2.to_string(),
-        ].join("");
+    //     let pos_key = [
+    //         p0.to_string(),
+    //         "_".to_string(),
+    //         p1.to_string(),
+    //         "_".to_string(),
+    //         p2.to_string(),
+    //     ].join("");
 
-        let penalty = evaluator_penalty_small::calculate_position_penalty(
-            *position_map.get_key_position(p0),
-            *position_map.get_key_position(p1),
-            *position_map.get_key_position(p2)
-        );
+    //     let penalty = evaluator_penalty_small::calculate_position_penalty(
+    //         *position_map.get_key_position(p0),
+    //         *position_map.get_key_position(p1),
+    //         *position_map.get_key_position(p2)
+    //     );
 
-        position_penalties.insert(pos_key, penalty);
-    }
+    //     position_penalties.insert(pos_key, penalty);
+    // }
 
     let penalty_filename = ["position", "_", "penalty", "_", "hashmap"].join("");
-    save_position_penalty_hashmap(&penalty_filename, position_penalties.clone());
+    //save_position_penalty_hashmap(&penalty_filename, position_penalties.clone());
 
     let mut position_penalties: HashMap<
         String,

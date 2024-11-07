@@ -13,7 +13,7 @@ mod evaluator_penalty_small;
 
 use chrono::Utc;
 use corpus_manager::{batch_parse_ngram_list, read_json_array_list, generate_ngram_list, generate_ngram_relation_list, save_ngram_list_relation_mapping, save_string_list, read_ngram_relation_mapping};
-use evaluator::{evaluate_by_ngram_frequency, evaluate_layouts, compare_layouts, evaluate_relation};
+use evaluator::{compare_layouts, evaluate_by_ngram_frequency, evaluate_layouts, evaluate_position_combinations, evaluate_position_penalty_hashmap, evaluate_relation};
 use file_manager::{read_directory_files, read_json_directory_files, save_small_file};
 use getopts::Options;
 use itertools::Itertools;
@@ -166,6 +166,7 @@ fn main() {
         //cargo run --release --features "func_timer" -- evaluate-relation result2_Brandon_Gore_messages_normalized_relation_3-2022-12-11 18-51-48.196865 UTC
         "evaluate-relation" => evaluate_relation_mapping(corpus_filename),
         "evaluate-layout" => evaluate_layout(corpus_filename),
+        "evaluate-score" => evaluate_layout_score(corpus_filename),
         _ => print_usage(progname, opts),
         //"refine" => ,//refine(&corpus[..], layout, debug, top, swaps),
     };
@@ -498,6 +499,138 @@ format!(
     );
 }
 
+pub fn print_result_score<'a>(item: evaluator_penalty_small::BestLayoutsEntry) {
+    let layout = &item.layout;
+    let total = item.penalty.total;
+    let bad_score_total = item.penalty.bad_score_total;
+    let good_score_total = item.penalty.good_score_total;
+    let len = item.penalty.len;
+    let penalties = &item.penalty.penalties;
+    let penalty = &item.penalty;
+    let fingers = &penalty.fingers;
+    let hands = &penalty.hands;
+    let show_all = false;
+    let positions = item.penalty.pos;
+    let position_penalties = item.penalty.pos_pen;
+    let mut position_working = [0; NUM_OF_KEYS];
+    position_penalties.into_iter().enumerate().for_each(|(i, penalty)|{
+        position_working[i] = (penalty * 100.0) as i128;
+    });
+    position_working.sort();
+
+    let max_position = position_working[NUM_OF_KEYS-1];
+    let min_position_penalty = position_working[0] as f64 / 100.0;
+    let range_position_penalty = max_position as f64/100.0 - min_position_penalty;
+
+    print!(
+        "{}{}{}{}{}{}{}{}{}{}{}{}{}",
+        format!("\n{}\n", layout),
+        format!("{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_penalty(position_penalties[0], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[1], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[2], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[3], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[4], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[5], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[6], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[7], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[8], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[9], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[10], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[11], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[12], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[13], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[14], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[15], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[16], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[17], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[18], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[19], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[20], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[21], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[22], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[23], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[24], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[25], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[26], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[27], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_penalty(position_penalties[28], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[29], min_position_penalty, range_position_penalty), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[30], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[31], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[32], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[33], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[34], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[35], min_position_penalty, range_position_penalty),""
+), 
+		),
+		format!("\n{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_count(positions[0], len), normalize_count(positions[1], len), normalize_count(positions[2], len), 		normalize_count(positions[3], len), normalize_count(positions[4], len), normalize_count(positions[5], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[6], len), normalize_count(positions[7], len), normalize_count(positions[8], len), 		normalize_count(positions[9], len), normalize_count(positions[10], len), normalize_count(positions[11], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[12], len), normalize_count(positions[13], len), normalize_count(positions[14], len), normalize_count(positions[15], len), 	normalize_count(positions[16], len), normalize_count(positions[17], len), normalize_count(positions[18], len), normalize_count(positions[19], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[20], len), normalize_count(positions[21], len), normalize_count(positions[22], len), normalize_count(positions[23], len), 	normalize_count(positions[24], len), normalize_count(positions[25], len), normalize_count(positions[26], len), normalize_count(positions[27], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_count(positions[28], len), 	normalize_count(positions[29], len), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[30], len), normalize_count(positions[31], len),normalize_count(positions[32], len), 	normalize_count(positions[33], len),normalize_count(positions[34], len), normalize_count(positions[35], len),""
+), 
+		),
+        format!("hands: {:<5.3} | {:<5.3}\n", normalize_penalty(hands[0] as f64, 0.0, len as f64), normalize_penalty(hands[1] as f64, 0.0, len as f64)),
+        format!(
+            "total: {0:<10.2}; total scaled: {1:<10.4}\n",
+            total,
+            total / (len as f64)
+        ),
+        format!(
+            "bad score total: {0:<10.2}; good score total: {1:<10.2}; bad score scaled: {2:<10.4}\n",
+            bad_score_total,
+            good_score_total,
+            bad_score_total / (len as f64)
+        ),
+        //format!("base {}\n",penalties[0]),
+        format!(
+            "\n{:<30} | {:^7} | {:^7} | {:^8} | {:<10}\n",
+            "Name", "% times", "Avg", "% Total", "Total"
+        ),
+        "----------------------------------------------------------------------\n",
+        penalties
+            .into_iter()
+            .map(|penalty| {
+                if penalty.show || show_all {
+                    format!(
+                        "{:<30} | {:<7.2} | {:<7.3} | {:<8.3} | {:<10.0}\n",
+                        penalty.name,
+                        (100.0 * penalty.times as f64 / (len as f64)),
+                        penalty.total / (len as f64),
+                        100.0 * penalty.total / bad_score_total,
+                        penalty.total
+                    )
+                } else {
+                    "".to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        "----------------------------------------------------------------------\n",
+        format!(
+            "\n{:^5.1} {:^5.1} {:^5.1} {:^5.1} | {:^5.1} {:^5.1} {:^5.1} {:^5.1}\n",
+            fingers[0] as f64 * 100.0 / len as f64 ,
+            fingers[1] as f64 * 100.0 / len as f64 ,
+            fingers[2] as f64 * 100.0 / len as f64 ,
+            fingers[3] as f64 * 100.0 / len as f64 ,
+            fingers[7] as f64 * 100.0 / len as f64 ,
+            fingers[6] as f64 * 100.0 / len as f64 ,
+            fingers[5] as f64 * 100.0 / len as f64 ,
+            fingers[4] as f64 * 100.0 / len as f64 
+        ),
+
+        format!("{:^5.1}| {:^5.1}\n", penalty.hands[0] as f64 * 100.0 / len as f64 , penalty.hands[1] as f64 * 100.0 / len as f64 ),
+        "##########################################################################\n"
+    );
+}
+
 fn generate(
     filepath: &String,
     normalize_length: usize
@@ -603,6 +736,65 @@ fn evaluate_layout(
 
 
         evaluator::evaluate_layout(existing_ngram_list, layout);
+    //run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
+
+	// match  quartads {
+	// 	Some(quartads) => run_ref_(quartads),
+	// 	None => run_ref_(&corpus_manager::prepare_ngram_list(corpus, swap_list, &split_char , normalize_length)),
+	// }
+
+}
+
+fn evaluate_layout_score(
+    filepath: &String
+){
+    //let corpus = read_text(&filepath.to_string());
+	// let run_ref_ = |ngrams|{  // making typechecker happy
+
+	// 	let ref_test = |s:&str, l:&layout::Layout|{
+	// 		println!("Reference: {}", s);
+	// 		let init_pos_map = l.get_position_map();
+	// 		let penalty= penalty::calculate_penalty(ngrams, &l);
+	// 		 simulator::print_result(&penalty);
+	// 		//println!("");
+	// 	};
+	// 	ref_test("BASE", &layout::BASE);
+	// };
+
+    // let swap_list: SwapCharList = SwapCharList { map: HashMap::new() };
+
+    let ngram_list= read_ngram_list(&filepath);
+    let processed_ngrams: Vec<(Vec<char>, usize)> = ngram_list
+    .map
+    .into_iter()
+    .map(|item| (item.0.chars().collect(), item.1))
+    .collect();
+
+        //let layout_string = "fk  wxctlibqspvhuraodg mz yj  e  n ".to_string();
+        //let layout_string = "aty### beqxvuikhgmdw#cj##lzpo#fns#r".to_string();
+
+        //let layout_string = "upfzqxyeowsgr_thdnialbcmj vk        ".to_string();
+
+        let layout_string = "uyszqx thpkloienfmcvdgarj#bw########".to_string();
+
+        let layout = Layout::from_lower_string(&layout_string[..]); 
+
+        //let layout = layout::BASE;
+        let mut position_combinations = evaluate_position_combinations();
+
+        println!("position_combinations: {:?}", position_combinations.len());
+    
+        let position_penalties_hashmap:  HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> = evaluate_position_penalty_hashmap(
+            position_combinations.clone()
+        );
+
+        let penalty = evaluator::evaluate_layout_score(&processed_ngrams, &layout, &position_penalties_hashmap);
+
+        let result = evaluator_penalty_small::BestLayoutsEntry {
+            layout: layout.clone(),
+            penalty,
+        };
+        print_result_score(result.clone());
     //run_ref_(&corpus_manager::prepare_ngram_list(&corpus, swap_list, &split_char , normalize_length))
 
 	// match  quartads {

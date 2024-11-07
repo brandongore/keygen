@@ -270,15 +270,36 @@ impl Penalty<{ layout::NUM_OF_KEYS }> {
             tri_pos: [0; 3],
         }
     }
+
+    pub fn add(&self, penalty: Penalty<{ layout::NUM_OF_KEYS }>, frequency: usize) -> Penalty<{ layout::NUM_OF_KEYS }> {
+        let mut new_penalties = self.penalties.clone();
+        for (index,self_penalty) in self.penalties.clone().into_iter().enumerate() {
+            new_penalties[index].total = self_penalty.total + (penalty.penalties[index].total * frequency as f64);
+            new_penalties[index].times = self_penalty.times + penalty.penalties[index].times * frequency ;
+        }
+
+        Penalty {
+            penalties: new_penalties,
+            pos: self.pos.iter().zip(&penalty.pos).map(|(a, b)| a + (b * frequency)).collect::<Vec<_>>().try_into().unwrap(),
+            pos_pen: self.pos_pen.iter().zip(&penalty.pos_pen).map(|(a, b)| a +  (b * frequency as f64)).collect::<Vec<_>>().try_into().unwrap(),
+            fingers: self.fingers.iter().zip(&penalty.fingers).map(|(a, b)| a + (b * frequency)).collect::<Vec<_>>().try_into().unwrap(),
+            hands: self.hands.iter().zip(&penalty.hands).map(|(a, b)| a + (b * frequency)).collect::<Vec<_>>().try_into().unwrap(),
+            bad_score_total: self.bad_score_total + (penalty.bad_score_total * frequency as f64),
+            good_score_total: self.good_score_total + penalty.good_score_total * frequency as f64,
+            total: self.total + (penalty.total * frequency as f64),
+            len: self.len + penalty.len,
+            tri_pos: self.tri_pos.iter().zip(&penalty.tri_pos).map(|(a, b)| a + b).collect::<Vec<_>>().try_into().unwrap(),
+        }
+    }
 }
 
 pub fn better_than_average_including_bad(
     first: &Penalty<{ layout::NUM_OF_KEYS }>,
     second: &Penalty<{ layout::NUM_OF_KEYS }>
 ) -> bool {
-    first.total < second.total &&
-        first.bad_score_total < second.bad_score_total &&
-        better_than_other(first, second)
+    first.bad_score_total < second.bad_score_total &&
+    first.good_score_total < second.good_score_total //&&
+        //better_than_other(first, second)
 }
 
 pub fn better_than_other(

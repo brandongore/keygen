@@ -6,6 +6,10 @@ extern crate rayon;
 use crate::annealing;
 use crate::corpus_manager;
 use crate::corpus_manager::NgramList;
+use crate::evaluator::evaluate_layout_score;
+use crate::evaluator::evaluate_position_combinations;
+use crate::evaluator::evaluate_position_penalty_hashmap;
+use crate::evaluator_penalty_small;
 use crate::file_manager::save_run_state;
 use crate::layout;
 use crate::layout::Layout;
@@ -43,17 +47,35 @@ pub fn simulate<'a>(
     .map(|item| (item.0.chars().collect(), item.1))
     .collect();
 
-    let mut initial_penalty = |shuffle:bool| {
+    let mut position_combinations = evaluate_position_combinations();
+
+    println!("position_combinations: {:?}", position_combinations.len());
+
+    let position_penalties_hashmap:  HashMap<String, evaluator_penalty_small::Penalty<{ layout::NUM_OF_KEYS }>> = evaluate_position_penalty_hashmap(
+        position_combinations.clone()
+    );
+
+    let mut initial_penalty = |shuffle: bool| {
         let mut layout = init_layout.clone();
         if shuffle {
             layout.shuffle(random::<usize>() % num_swaps + 2);
         }
-        penalty::calculate_penalty(&processed_ngrams, &layout)
+
+        let penalty = evaluate_layout_score(&processed_ngrams, &layout, &position_penalties_hashmap);
+
+        //println!("Penalty after evaluation: {:?}", penalty);
+
+        evaluator_penalty_small::BestLayoutsEntry {
+            layout: layout.clone(),
+            penalty,
+        }
     };
     println!("initial:\r\n");
-    print_result(&initial_penalty(false));
+    let first = initial_penalty(false);
+    
+    print_result_evaluator(first.clone());
 
-    let mut best_layouts: Vec<BestLayoutsEntry> = //Vec::new();
+    let mut best_layouts: Vec<crate::evaluator_penalty_small::BestLayoutsEntry> = //Vec::new();
          (0..BEST_LAYOUTS_KEPT).map(|_| initial_penalty(true)).collect();
 
     // in each iteration each thread takes a random layout and tries to optimalize it for 5000 cycles;
@@ -65,15 +87,15 @@ pub fn simulate<'a>(
         
         if best_layouts.len() > 1 { normalize_index = 1 } else { normalize_index = 0};
         println!("iteration: {}", it_num);
-        let iteration: Vec<BestLayoutsEntry> = (0..threads)
+        let iteration: Vec<crate::evaluator_penalty_small::BestLayoutsEntry> = (0..threads)
             .map(|i| &best_layouts[best_layouts.len() -1 -(i * normalize_index as usize) as usize])
-            .collect::<Vec<&BestLayoutsEntry>>()
+            .collect::<Vec<&crate::evaluator_penalty_small::BestLayoutsEntry>>()
             .into_par_iter()
             .map(|entry| {
                 let mut accepted_layout = entry.clone();
-                let mut bestLayout: BestLayoutsEntry = entry.clone();
+                let mut bestLayout: crate::evaluator_penalty_small::BestLayoutsEntry = entry.clone();
 
-                let printFrequency = thread_rng().gen::<i32>() % 100000 + 100000;
+                let printFrequency = thread_rng().gen::<i32>() % 100000 + 10000;
 
                 for cycle in 1..CYCLES + 1 {
                     let mut curr_layout = accepted_layout.clone();
@@ -82,9 +104,14 @@ pub fn simulate<'a>(
                         .shuffle(random::<usize>() % num_swaps + 1);
 
                     // Calculate penalty.
-                    curr_layout = penalty::calculate_penalty(&processed_ngrams, &curr_layout.layout);
+                    //curr_layout = penalty::calculate_penalty(&processed_ngrams, &curr_layout.layout);
 
-                    if better_than_average_including_bad(&curr_layout.penalty, &bestLayout.penalty) {
+                    curr_layout = crate::evaluator_penalty_small::BestLayoutsEntry {
+                        layout: curr_layout.layout.clone(),
+                        penalty: evaluate_layout_score(&processed_ngrams, &curr_layout.layout, &position_penalties_hashmap)
+                    };
+
+                    if crate::evaluator_penalty_small::better_than_average_including_bad(&curr_layout.penalty, &bestLayout.penalty) {
                         bestLayout = curr_layout.clone();
                     }
 
@@ -101,7 +128,7 @@ pub fn simulate<'a>(
                     }
                      if cycle % printFrequency  == 0 {
                     //     println!("BESTBESTBESTBESTBESTBESTBESTBESTBESTBESTBEST");
-                           print_result(&bestLayout);
+                    print_result_evaluator(bestLayout.clone());
                     //     println!("BESTBESTBESTBESTBESTBESTBESTBESTBESTBESTBEST");
                     //     println!("CURRCURRCURRCURRCURRCURRCURRCURRCURRCURRCURR");
                     //     print_result(&curr_layout);
@@ -124,13 +151,13 @@ pub fn simulate<'a>(
         timer.stop(String::from(format!("iteration{}", it_num)));
     }
 
-    save_run_state(&best_layouts);
+    //save_run_state(&best_layouts);
 
     //println!("................................................");
 
     for entry in best_layouts {
         println!("************************************************");
-        print_result(&entry);
+        print_result_evaluator(entry.clone());
         println!("************************************************");
     }
 }
@@ -220,6 +247,142 @@ pub fn normalize_penalty(penalty:f64, min: f64, range: f64) -> f64{
 }
 
 pub fn print_result<'a>(item: &BestLayoutsEntry) {
+    let layout = &item.layout;
+    let bad_score_total = item.penalty.bad_score_total;
+    let good_score_total = item.penalty.good_score_total;
+    let total = item.penalty.total;
+    let absolute_total = bad_score_total.abs() + good_score_total.abs();
+    let len = item.penalty.len;
+    let penalties = &item.penalty.penalties;
+    let penalty = &item.penalty;
+    let fingers = &penalty.fingers;
+    let hands = &penalty.hands;
+    let show_all = false;
+    let positions = item.penalty.pos;
+    let position_penalties = item.penalty.pos_pen;
+    let mut position_working = [0; NUM_OF_KEYS];
+    position_penalties.into_iter().enumerate().for_each(|(i, penalty)|{
+        position_working[i] = (penalty * 100.0) as u128;
+    });
+    position_working.sort();
+
+    let max_position = position_working[NUM_OF_KEYS-1];
+    let min_position_penalty = position_working[0] as f64 / 100.0;
+    let range_position_penalty = max_position as f64/100.0 - min_position_penalty;
+
+    print!(
+        "{}{}{}{}{}{}{}{}{}{}{}{}{}",
+        format!("\n{}\n", layout),
+        format!("{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_penalty(position_penalties[0], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[1], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[2], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[3], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[4], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[5], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[6], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[7], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[8], min_position_penalty, range_position_penalty), 		normalize_penalty(position_penalties[9], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[10], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[11], min_position_penalty, range_position_penalty),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[12], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[13], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[14], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[15], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[16], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[17], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[18], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[19], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_penalty(position_penalties[20], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[21], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[22], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[23], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[24], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[25], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[26], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[27], min_position_penalty, range_position_penalty), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_penalty(position_penalties[28], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[29], min_position_penalty, range_position_penalty), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_penalty(position_penalties[30], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[31], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[32], min_position_penalty, range_position_penalty), 	normalize_penalty(position_penalties[33], min_position_penalty, range_position_penalty),normalize_penalty(position_penalties[34], min_position_penalty, range_position_penalty), normalize_penalty(position_penalties[35], min_position_penalty, range_position_penalty),""
+), 
+		),
+		format!("\n{}\n{}\n{}\n{}\n{}\n{}\n",
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"", normalize_count(positions[0], len), normalize_count(positions[1], len), normalize_count(positions[2], len), 		normalize_count(positions[3], len), normalize_count(positions[4], len), normalize_count(positions[5], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[6], len), normalize_count(positions[7], len), normalize_count(positions[8], len), 		normalize_count(positions[9], len), normalize_count(positions[10], len), normalize_count(positions[11], len),""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[12], len), normalize_count(positions[13], len), normalize_count(positions[14], len), normalize_count(positions[15], len), 	normalize_count(positions[16], len), normalize_count(positions[17], len), normalize_count(positions[18], len), normalize_count(positions[19], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	normalize_count(positions[20], len), normalize_count(positions[21], len), normalize_count(positions[22], len), normalize_count(positions[23], len), 	normalize_count(positions[24], len), normalize_count(positions[25], len), normalize_count(positions[26], len), normalize_count(positions[27], len), 
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"","","",normalize_count(positions[28], len), 	normalize_count(positions[29], len), "","",""
+), 
+format!(
+	"{:<5.3} {:<5.3} {:<5.3} {:<5.3} | {:<5.3} {:<5.3} {:<5.3} {:<5.3}",
+	"",normalize_count(positions[30], len), normalize_count(positions[31], len),normalize_count(positions[32], len), 	normalize_count(positions[33], len),normalize_count(positions[34], len), normalize_count(positions[35], len),""
+), 
+		),
+        format!("{:^5.1}| {:^5.1}\n", penalty.hands[0] as f64 * 100.0 / len as f64 , penalty.hands[1] as f64 * 100.0 / len as f64 ),
+        format!(
+            "total: {0:<10.2}; total scaled: {1:<10.4}\n",
+            total,
+            total / (len as f64)
+        ),
+        format!(
+            "bad score total: {0:<10.2}; good score total: {1:<10.2}; bad score scaled: {2:<10.4}\n",
+            bad_score_total,
+            good_score_total,
+            bad_score_total / (len as f64)
+        ),
+        //format!("base {}\n",penalties[0]),
+        format!(
+            "\n{:<30} | {:^7} | {:^7} | {:^8} | {:<10}\n",
+            "Name", "% times", "Avg", "% Total", "Total"
+        ),
+        "----------------------------------------------------------------------\n",
+        penalties
+            .into_iter()
+            .map(|penalty| {
+                if penalty.show || show_all {
+                    format!(
+                        "{:<30} | {:<7.2} | {:<7.3} | {:<8.3} | {:<10.0}\n",
+                        penalty.name,
+                        (100.0 * penalty.times as f64 / (len as f64)),
+                        penalty.total / (len as f64),
+                        100.0 * penalty.total / absolute_total,
+                        penalty.total
+                    )
+                } else {
+                    "".to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        "----------------------------------------------------------------------\n",
+        format!(
+            "\n{:^5.1} {:^5.1} {:^5.1} {:^5.1} | {:^5.1} {:^5.1} {:^5.1} {:^5.1}\n",
+            fingers[0] as f64 * 100.0 / len as f64 ,
+            fingers[1] as f64 * 100.0 / len as f64 ,
+            fingers[2] as f64 * 100.0 / len as f64 ,
+            fingers[3] as f64 * 100.0 / len as f64 ,
+            fingers[8] as f64 * 100.0 / len as f64 ,
+            fingers[7] as f64 * 100.0 / len as f64 ,
+            fingers[6] as f64 * 100.0 / len as f64 ,
+            fingers[5] as f64 * 100.0 / len as f64 
+        ),
+        format!(
+            "\n\t\t{:^5.1}\t|\t{:^5.1}\t\t\n",
+            fingers[4] as f64 * 100.0 / len as f64 ,
+            fingers[9] as f64 * 100.0 / len as f64
+        ),
+        "##########################################################################\n"
+    );
+}
+
+pub fn print_result_evaluator<'a>(item: evaluator_penalty_small::BestLayoutsEntry) {
     let layout = &item.layout;
     let bad_score_total = item.penalty.bad_score_total;
     let good_score_total = item.penalty.good_score_total;
